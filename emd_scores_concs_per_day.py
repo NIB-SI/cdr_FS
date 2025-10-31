@@ -9,6 +9,10 @@ from itertools import combinations
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+# Get experimental parameters from config
+concentrations = config['feature_selection']['concentrations'].split(',')
+days = config['feature_selection']['days'].split(',')
+
 # Get paths from config
 base_path = config['feature_selection']['base_path']
 trimmed_standardized_file_rel = config['feature_selection']['trimmed_standardized_file']
@@ -39,10 +43,6 @@ metadata_columns = [
     "Concentration", "counts_Cells", "counts_Cytoplasm", "counts_FilteredNuclei", 
     "Metadata_Well", "Metadata_Day", "Metadata_Biorep", "Tech_replica", "Day_Well_BR", "cell_ID"
 ]
-
-# List of concentrations to compare
-concentrations = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]
-days = ["D1", "D5", "D7", "D9"]
 
 # Prepare a list to store the results
 results_list = []

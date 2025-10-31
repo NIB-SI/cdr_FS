@@ -9,6 +9,10 @@ from scipy.optimize import curve_fit
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+# Get experimental parameters from config
+control_conc = int(config['feature_selection']['control_concentration'])
+concentrations = [int(c) for c in config['feature_selection']['concentrations'].split(',')]
+
 # Get paths from config
 base_path = config['feature_selection']['base_path']
 emd_scores_dir_rel = config['feature_selection']['emd_scores_dir']
@@ -24,17 +28,8 @@ os.makedirs(output_dir, exist_ok=True)
 # Step 2: Read the data
 data = pd.read_csv(file_path, sep='\t')
 
-# Step 3: Define the population pairs and order
-population_pairs = [
-    (11, 10),
-    (11, 9),
-    (11, 8),
-    (11, 7),
-    (11, 6),
-    (11, 5),
-    (11, 4),
-    (11, 3),
-]
+# Step 3: Define the population pairs and order (control vs all other concentrations)
+population_pairs = [(control_conc, c) for c in sorted(concentrations, reverse=True) if c != control_conc]
 pair_labels = [f'{p1}v{p2}' for p1, p2 in population_pairs]
 
 # Step 4: Extract unique features and days

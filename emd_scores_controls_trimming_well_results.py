@@ -8,6 +8,11 @@ import configparser
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+# Get experimental parameters from config
+concentration = config['feature_selection']['control_concentration']
+days = config['feature_selection']['days'].split(',')
+bioreps = config['feature_selection']['bioreps'].split(',')
+
 # Get paths from config
 base_path = config['feature_selection']['base_path']
 standardized_file_rel = config['feature_selection']['standardized_file']
@@ -46,11 +51,6 @@ metadata_columns = [
     "Concentration", "counts_Cells", "counts_Cytoplasm", "counts_FilteredNuclei", 
     "Metadata_Well", "Metadata_Day", "Metadata_Biorep", "Tech_replica", "Day_Well_BR", "cell_ID"
 ]
-concentration = "11"
-days = ["D1", "D5", "D7", "D9"]
-
-# Define the combinations for each group, now including BR4
-bioreps = ["BR1", "BR2", "BR3", "BR4"]
 
 # Prepare a list to store the results
 results_list = []

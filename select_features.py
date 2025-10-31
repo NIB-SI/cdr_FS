@@ -7,6 +7,9 @@ import configparser
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+# Get experimental parameters from config
+selection_days = config['feature_selection']['selection_days'].split(',')
+
 # Get paths from config
 base_path = config['feature_selection']['base_path']
 emd_scores_drc_dir_rel = config['feature_selection']['emd_scores_drc_dir']
@@ -22,15 +25,9 @@ os.makedirs(output_path, exist_ok=True)
 # Load the data
 data = pd.read_csv(file_path, sep="\t")
 
-# Define day combinations
+# Define day combinations from config
 day_combinations = {
-    #"D1": ["D1"],
-    #"D5": ["D5"],
-    #"D7": ["D7"],
-    #"D9": ["D9"],
-    #"D1_D5_D7": ["D1", "D5", "D7"],
-    #"D5_D7": ["D5", "D7"],
-    "all_days": ["D1", "D5", "D7", "D9"],
+    "_".join(selection_days): selection_days,
 }
 
 # Function to check if a feature should be excluded
