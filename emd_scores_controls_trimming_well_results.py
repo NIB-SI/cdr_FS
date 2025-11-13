@@ -13,6 +13,15 @@ concentration = config['feature_selection']['control_concentration']
 days = config['feature_selection']['days'].split(',')
 bioreps = config['feature_selection']['bioreps'].split(',')
 
+# Read experiment structure - which bioreps exist for each day
+day_bioreps = {}
+for day in days:
+    if config.has_option('experiment_structure', f'{day}_replicates'):
+        day_bioreps[day] = config['experiment_structure'][f'{day}_replicates'].split(',')
+    else:
+        # Fallback: use all bioreps if not specified
+        day_bioreps[day] = bioreps
+
 # Get paths from config
 base_path = config['feature_selection']['base_path']
 standardized_file_rel = config['feature_selection']['standardized_file']
@@ -68,8 +77,9 @@ def trim_extremes(values, lower_percentile=0, upper_percentile=100):
 # Iterate over each day
 for day in days:
     print(f"\nProcessing day: {day}")
-    for i in range(4):  # Now iterate over 4 bioreps
-        biorep = bioreps[i]
+    available_bioreps = day_bioreps.get(day, bioreps)
+    
+    for i, biorep in enumerate(available_bioreps):
         print(f"Filter for popu{i+1}: Metadata_Biorep == {biorep}, Metadata_Day == {day}, Concentration == {concentration}")
         filtered_data = data[
             (data["Metadata_Biorep"] == biorep) &
@@ -81,10 +91,10 @@ for day in days:
     # Create the population dataframes for the current day and concentration
     populations = {
         f"popu{i+1}": data[
-            (data["Metadata_Biorep"] == bioreps[i]) &
+            (data["Metadata_Biorep"] == available_bioreps[i]) &
             (data["Metadata_Day"] == day) &
             (data["Concentration"] == concentration)
-        ] for i in range(4)  # Now create 4 populations
+        ] for i in range(len(available_bioreps))
     }
 
     # Trim the data at the well level
@@ -107,12 +117,13 @@ for day in days:
             print(pop.head())
 
     # Iterate over each pair of populations
-    for i in range(4):  # Now iterate over 4 populations
-        for j in range(i+1, 4):  # And compare with the remaining populations
+    num_pops = len(available_bioreps)
+    for i in range(num_pops):
+        for j in range(i+1, num_pops):
             popu1 = populations[f"popu{i+1}"]
             popu2 = populations[f"popu{j+1}"]
-            population1 = f"{bioreps[i]}_{day}_{concentration}"
-            population2 = f"{bioreps[j]}_{day}_{concentration}"
+            population1 = f"{available_bioreps[i]}_{day}_{concentration}"
+            population2 = f"{available_bioreps[j]}_{day}_{concentration}"
 
             print(f"Comparing: {population1} vs {population2}")
 
