@@ -13,6 +13,11 @@ config.read('config.ini')
 control_conc = int(config['feature_selection']['control_concentration'])
 concentrations = [int(c) for c in config['feature_selection']['concentrations'].split(',')]
 
+# Concentrations left out of model fitting. The highest exposure concentration is
+# excluded so that concentration-response detection stays within sub-cytotoxic
+# exposure levels; the EMD scores themselves are still computed for every pair.
+excluded_concs = [int(c) for c in config['feature_selection']['drc_excluded_concentrations'].split(',') if c.strip()]
+
 # Plots per row/column in the output images (1 = one plot per image, 5 = 5x5 grid)
 grid_size = config.getint('feature_selection', 'drc_grid_size', fallback=3)
 
@@ -31,9 +36,11 @@ os.makedirs(output_dir, exist_ok=True)
 # Step 2: Read the data
 data = pd.read_csv(file_path, sep='\t')
 
-# Step 3: Define the population pairs and order (control vs all other concentrations)
-population_pairs = [(control_conc, c) for c in sorted(concentrations, reverse=True) if c != control_conc]
+# Step 3: Define the population pairs and order (control vs every fitted concentration)
+population_pairs = [(control_conc, c) for c in sorted(concentrations, reverse=True)
+                    if c != control_conc and c not in excluded_concs]
 pair_labels = [f'{p1}v{p2}' for p1, p2 in population_pairs]
+print(f"Fitting {len(population_pairs)} concentration pairs: {', '.join(pair_labels)}")
 
 # Step 4: Extract unique features and days
 features = data['Feature'].unique()
