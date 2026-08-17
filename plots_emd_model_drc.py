@@ -13,6 +13,9 @@ config.read('config.ini')
 control_conc = int(config['feature_selection']['control_concentration'])
 concentrations = [int(c) for c in config['feature_selection']['concentrations'].split(',')]
 
+# Plots per row/column in the output images (1 = one plot per image, 5 = 5x5 grid)
+grid_size = config.getint('feature_selection', 'drc_grid_size', fallback=3)
+
 # Get paths from config
 base_path = config['feature_selection']['base_path']
 emd_scores_dir_rel = config['feature_selection']['emd_scores_dir']
@@ -37,8 +40,10 @@ features = data['Feature'].unique()
 days = data['Metadata_Day'].unique()
 
 # Step 5: Define the models for dose-response fitting
-def brain_cousens_bc4(x, b, c, d, e):
-    return c + (d - c) / (1 + np.exp(b * (np.log(x + 1e-10) - np.log(e + 1e-10))))
+# BC4 is BC5 with the lower asymptote fixed at 0; the f * x term is what makes it
+# a hormesis model and distinct from the log-logistic below
+def brain_cousens_bc4(x, b, d, e, f):
+    return (d + f * x) / (1 + np.exp(b * (np.log(x + 1e-10) - np.log(e + 1e-10))))
 
 def brain_cousens_bc5(x, b, c, d, e, f):
     return c + (d - c + f * x) / (1 + np.exp(b * (np.log(x + 1e-10) - np.log(e + 1e-10))))
@@ -120,12 +125,12 @@ def plot_feature_day(feature, day, data, results):
             y.append(np.nan)
 
     y = np.array(y, dtype=np.float64)
-    plt.plot(x, y, 'o')
+    plt.plot(x, y, 'o', markersize=10)
 
     models = ['BC4', 'BC5', 'LL4', 'WB1.4', 'Lin', 'Con']
     colors = ['#d73027', '#f46d43', '#fdae61', '#abd9e9', '#74add1', '#4575b4']
     initial_guesses = [
-        [1, min(y), max(y), np.median(x)],
+        [1, max(y), np.median(x), 0.1],
         [1, min(y), max(y), np.median(x), 0.1],
         [1, min(y), max(y), np.median(x)],
         [1, min(y), max(y), np.median(x)],
@@ -142,52 +147,60 @@ def plot_feature_day(feature, day, data, results):
             if params is not None:
                 if model == 'Lin':
                     results.append((feature, day, model, aic, bic, slope))
-                    plt.plot(x, linear(x, *params), '-', color=color, alpha=0.9)
+                    plt.plot(x, linear(x, *params), '-', color=color, alpha=0.9, lw=3)
                     legend_entries.append((model, aic, bic, color, slope))
                 else:
                     results.append((feature, day, model, aic, bic, None))
                     if model == 'BC4':
-                        plt.plot(x, brain_cousens_bc4(x, *params), '-', color=color, alpha=0.9)
+                        plt.plot(x, brain_cousens_bc4(x, *params), '-', color=color, alpha=0.9, lw=3)
                     elif model == 'BC5':
-                        plt.plot(x, brain_cousens_bc5(x, *params), '-', color=color, alpha=0.9)
+                        plt.plot(x, brain_cousens_bc5(x, *params), '-', color=color, alpha=0.9, lw=3)
                     elif model == 'LL4':
-                        plt.plot(x, four_param_log_logistic(x, *params), '-', color=color, alpha=0.9)
+                        plt.plot(x, four_param_log_logistic(x, *params), '-', color=color, alpha=0.9, lw=3)
                     elif model == 'WB1.4':
-                        plt.plot(x, four_param_weibull(x, *params), '-', color=color, alpha=0.9)
+                        plt.plot(x, four_param_weibull(x, *params), '-', color=color, alpha=0.9, lw=3)
                     elif model == 'Con':
-                        plt.plot(x, constant(x, *params), '-', color=color, alpha=0.9)
+                        plt.plot(x, constant(x, *params), '-', color=color, alpha=0.9, lw=3)
                     legend_entries.append((model, aic, bic, color, None))
 
-    plt.title(f'{feature}, Day: {day}', fontsize=8, wrap=True)
-    plt.ylabel('EMD Score', fontsize=8)
+    plt.title(f'{feature}, Day: {day}', fontsize=16, wrap=True)
+    plt.ylabel('EMD Score', fontsize=16)
     plt.xticks(ticks=x, labels=pair_labels, rotation=45, fontsize=6)
-    
+
     # Sort legend entries by AIC + BIC
     legend_entries.sort(key=lambda x: x[1] + x[2])
-    handles = [plt.Line2D([0], [0], color=color, lw=2, alpha=0.9) for _, _, _, color, _ in legend_entries]
+    handles = [plt.Line2D([0], [0], color=color, lw=3, alpha=0.9) for _, _, _, color, _ in legend_entries]
     labels = [
         f'{model} AIC/BIC: {aic:.2f}/{bic:.2f}' if model != 'Lin' else f'{model} AIC/BIC: {aic:.2f}/{bic:.2f}, Slope: {slope:.2f}'
         for model, aic, bic, color, slope in legend_entries
     ]
-    plt.legend(handles, labels, fontsize=8)
+    plt.yticks(fontsize=16)
+    plt.legend(handles, labels, fontsize=16)
 
 # Step 8: Generate plots for all features and days and save results
-def generate_all_plots(features, days, data, output_dir):
+def generate_all_plots(features, days, data, output_dir, grid_size):
+    """
+    grid_size: number of plots per row/column (e.g. 1 for 1x1, 3 for 3x3, 5 for 5x5).
+    Figure size scales with grid_size so individual plots stay large.
+    """
     results = []
+    plot_size = 8  # inches per subplot
+    num_plots = grid_size ** 2
+
     for day in days:
         num_features = len(features)
-        num_plots = 25  # 5x5 grid
         num_images = (num_features + num_plots - 1) // num_plots
-        
+
         for img_idx in range(num_images):
-            plt.figure(figsize=(20, 20))
+            fig_size = plot_size * grid_size
+            plt.figure(figsize=(fig_size, fig_size))
             for i in range(num_plots):
                 feature_idx = img_idx * num_plots + i
                 if feature_idx < num_features:
                     feature = features[feature_idx]
-                    plt.subplot(5, 5, i + 1)
+                    plt.subplot(grid_size, grid_size, i + 1)
                     plot_feature_day(feature, day, data, results)
-            
+
             plt.tight_layout()
             plt.savefig(os.path.join(output_dir, f'Day_{day}_part_{img_idx + 1}.png'))
             plt.close()
@@ -197,6 +210,6 @@ def generate_all_plots(features, days, data, output_dir):
     results_df.to_csv(os.path.join(output_dir, 'model_fit_results.txt'), sep='\t', index=False)
 
 # Call the function to generate all plots
-generate_all_plots(features, days, data, output_dir)
+generate_all_plots(features, days, data, output_dir, grid_size)
 
 print("DRC model fitting and plotting completed. Results saved to", output_dir)
