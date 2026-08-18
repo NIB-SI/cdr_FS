@@ -1,0 +1,89 @@
+# ---------------------------------------------------------------------------
+# Data — NEVER commit these.
+#
+# The golden-test input (cell_ID_pooled_median_row_plate_standardization_cid.txt)
+# is ~3.7 GB. It lives in the Zenodo dataset and is referenced by DOI in the
+# README, never carried in git history:
+#   https://doi.org/10.5281/zenodo.17951792
+#
+# Small committed fixtures for CI belong in tests/fixtures/, which is NOT ignored.
+# ---------------------------------------------------------------------------
+data/
+*.txt.gz
+*.tsv.gz
+
+# Large tabular data anywhere except the test fixtures
+*.txt
+*.tsv
+*.csv
+!tests/fixtures/**
+!examples/**
+!requirements*.txt
+
+# Pipeline outputs
+results/
+output/
+*.png
+!docs/**/*.png
+!examples/**/*.png
+
+# ---------------------------------------------------------------------------
+# Local working material
+# ---------------------------------------------------------------------------
+CLAUDE.md
+.log/
+archive/
+scratch/
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+.python-version
+
+# Testing / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

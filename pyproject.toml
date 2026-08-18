@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cdr-fs"
+version = "0.1.0.dev0"
+description = "Feature selection for high-content screening by fitting concentration/dose-response models to earth mover's distance scores."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Miha Tome", email = "miha.tome@nib.si" }]
+maintainers = [{ name = "Miha Tome", email = "miha.tome@nib.si" }]
+keywords = [
+    "high-content screening",
+    "high-content imaging",
+    "feature selection",
+    "concentration-response",
+    "dose-response",
+    "earth mover's distance",
+    "wasserstein distance",
+    "ecotoxicology",
+    "CellProfiler",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "scikit-learn>=1.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+cdr-fs = "cdr_fs.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/NIB-SI/cdr_FS"
+Repository = "https://github.com/NIB-SI/cdr_FS"
+"Origin pipeline" = "https://github.com/NIB-SI/HCS-proc"
+"Method article" = "https://doi.org/10.1021/acs.est.5c18316"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

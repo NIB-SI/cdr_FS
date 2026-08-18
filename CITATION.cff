@@ -1,0 +1,147 @@
+cff-version: 1.2.0
+title: >-
+  cdr_FS: concentration/dose-response model fitting for feature
+  selection in high-content screening
+message: >-
+  If you use this software, please cite both the software and the
+  article listed under preferred-citation, in which the method was
+  first published.
+type: software
+authors:
+  - given-names: Miha
+    family-names: Tome
+    orcid: 'https://orcid.org/0000-0001-7729-7381'
+    email: miha.tome@nib.si
+    affiliation: >-
+      Department of Biotechnology and Systems Biology, National
+      Institute of Biology, Ljubljana, 1000, Slovenia
+contact:
+  - given-names: Miha
+    family-names: Tome
+    orcid: 'https://orcid.org/0000-0001-7729-7381'
+    email: miha.tome@nib.si
+repository-code: 'https://github.com/NIB-SI/cdr_FS'
+license: MIT
+keywords:
+  - high-content screening
+  - high-content imaging
+  - feature selection
+  - concentration-response
+  - dose-response
+  - earth mover's distance
+  - Wasserstein distance
+  - ecotoxicology
+  - CellProfiler
+preferred-citation:
+  type: article
+  title: >-
+    A High-Content Imaging Pipeline to Investigate Subcytotoxic
+    Effects in RTgill-W1 Cells
+  notes: >-
+    M.T. and B.J. contributed equally to this work. The
+    concentration-response feature selection generalised by cdr_FS is
+    described in this article.
+  authors:
+    - given-names: Miha
+      family-names: Tome
+      orcid: 'https://orcid.org/0000-0001-7729-7381'
+      email: miha.tome@nib.si
+      affiliation: >-
+        Department of Biotechnology and Systems Biology, National
+        Institute of Biology, Ljubljana, 1000, Slovenia
+    - given-names: Barbara
+      family-names: Jozef
+      orcid: 'https://orcid.org/0000-0001-7311-4373'
+      affiliation: >-
+        Environmental Toxicology, Eawag, Dübendorf, 8600, Switzerland
+    - given-names: Sven Lukas
+      family-names: Mosimann
+      orcid: 'https://orcid.org/0009-0001-9192-967X'
+      affiliation: >-
+        Environmental Toxicology, Eawag, Dübendorf, 8600, Switzerland;
+        Institute of Biogeochemistry and Pollutant Dynamics, ETHZ,
+        Zürich, 8092, Switzerland
+    - given-names: Marissa
+      family-names: Kosnik
+      orcid: 'https://orcid.org/0000-0002-2609-5816'
+      affiliation: >-
+        Environmental Toxicology, Eawag, Dübendorf, 8600, Switzerland
+    - given-names: Kristin
+      family-names: Schirmer
+      orcid: 'https://orcid.org/0000-0003-1116-4724'
+      affiliation: >-
+        Environmental Toxicology, Eawag, Dübendorf, 8600, Switzerland;
+        Institute of Biogeochemistry and Pollutant Dynamics, ETHZ,
+        Zürich, 8092, Switzerland
+    - given-names: Anže
+      family-names: Županič
+      orcid: 'https://orcid.org/0000-0003-3303-9086'
+      affiliation: >-
+        Department of Biotechnology and Systems Biology, National
+        Institute of Biology, Ljubljana, 1000, Slovenia
+  journal: Environmental Science & Technology
+  publisher:
+    name: American Chemical Society
+  issn: 0013-936X
+  year: 2026
+  month: 8
+  volume: 60
+  issue: 31
+  start: 21402
+  end: 21416
+  doi: 10.1021/acs.est.5c18316
+  url: 'https://doi.org/10.1021/acs.est.5c18316'
+  license: CC-BY-4.0
+  identifiers:
+    - type: other
+      value: 'PMID:42579109'
+      description: PubMed identifier
+    - type: other
+      value: 'PMC13472083'
+      description: PubMed Central identifier (open-access full text)
+references:
+  - type: software
+    title: 'NIB-SI/HCS-proc'
+    notes: >-
+      The published pipeline this tool was extracted from. Concept DOI
+      for the code archive; always resolves to the newest release.
+      Release v1 (10.5281/zenodo.17949848) is the exact code used for
+      the article.
+    authors:
+      - given-names: Miha
+        family-names: Tome
+        orcid: 'https://orcid.org/0000-0001-7729-7381'
+        affiliation: >-
+          Department of Biotechnology and Systems Biology, National
+          Institute of Biology, Ljubljana, 1000, Slovenia
+    year: 2025
+    doi: 10.5281/zenodo.17949847
+    url: 'https://doi.org/10.5281/zenodo.17949847'
+    license: MIT
+    publisher:
+      name: Zenodo
+  - type: data
+    title: >-
+      A high-content imaging pipeline to investigate subcytotoxic
+      effects in RTgill-W1 cells
+    notes: >-
+      Dataset the reference configuration in examples/published.ini
+      reproduces. Concept DOI; release v1 is 10.5281/zenodo.17951793.
+    authors:
+      - given-names: Miha
+        family-names: Tome
+        orcid: 'https://orcid.org/0000-0001-7729-7381'
+        affiliation: >-
+          Department of Biotechnology and Systems Biology, National
+          Institute of Biology, Ljubljana, 1000, Slovenia
+      - given-names: Barbara
+        family-names: Jozef
+        orcid: 'https://orcid.org/0000-0001-7311-4373'
+        affiliation: >-
+          Environmental Toxicology, Eawag, Dübendorf, 8600, Switzerland
+    year: 2025
+    doi: 10.5281/zenodo.17951792
+    url: 'https://doi.org/10.5281/zenodo.17951792'
+    license: CC-BY-4.0
+    publisher:
+      name: Zenodo
