@@ -70,10 +70,10 @@ def test_dose_vector_is_the_exact_dilution_series(localised):
     assert config.design.dose_of["2"] == 1000.0
 
 
-def test_log_dose_is_available_now_that_doses_are_declared(localised, tmp_path):
+def test_dose_axis_is_available_now_that_doses_are_declared(localised, tmp_path):
     # Every dose is positive, so the alternative x-axis validates. Rank remains the
     # default because rank is what the published run fitted.
-    text = localised.read_text(encoding="utf-8").replace("x_scale = rank", "x_scale = log_dose")
-    path = tmp_path / "log_dose.ini"
+    text = localised.read_text(encoding="utf-8").replace("x_scale = rank", "x_scale = dose")
+    path = tmp_path / "dose.ini"
     path.write_text(text, encoding="utf-8")
-    assert load_config(path).fit.x_scale == "log_dose"
+    assert load_config(path).fit.x_scale == "dose"

@@ -23,8 +23,6 @@ __all__ = ["main"]
 #: Stages still to be built, and where they land. Kept explicit so `--help` cannot
 #: imply a stage exists before it does.
 PENDING = {
-    "fit": "model fitting and information-criterion ranking (phase 3)",
-    "select": "the retention rule (phase 3)",
     "prune": "correlation-based redundancy pruning (phase 5)",
     "subset": "applying a selected feature list to the data (phase 5)",
     "run": "every stage in sequence (available once the stages are)",
@@ -89,6 +87,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "earth mover's distance between control and each exposure level",
     )
     emd.set_defaults(handler=_emd)
+
+    fit = _add(
+        subparsers, "fit", "fit the concentration-response models to the distance series"
+    )
+    fit.set_defaults(handler=_fit)
+
+    select = _add(subparsers, "select", "apply the retention rule to the fitted models")
+    select.set_defaults(handler=_select)
 
     for command, description in PENDING.items():
         pending = _add(subparsers, command, f"{description} [not yet implemented]")
@@ -362,6 +368,20 @@ def _write(config: Config, table, name: str):
     return target
 
 
+def _read_stage(config: Config, name: str, produced_by: str):
+    """Read a previous stage's output, or say which command produces it."""
+    import pandas as pd
+
+    target = (
+        Path(config.output.dir) / f"{name}{_EXTENSIONS[config.input.sep_keyword]}"
+    )
+    if not target.exists():
+        raise ConfigError(
+            f"{target} is missing - run `cdr-fs {produced_by} -c {config.path}` first"
+        )
+    return pd.read_csv(target, sep=config.input.sep, dtype={"feature": str, "stratum": str})
+
+
 def _trim(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     if not config.trim.enabled:
@@ -393,6 +413,33 @@ def _emd(args: argparse.Namespace) -> int:
         baseline, baseline_report = compute_baseline(config, frame, resolved.features)
         print(baseline_report.summary())
         _write(config, baseline, "emd_baseline")
+    return 0
+
+
+def _fit(args: argparse.Namespace) -> int:
+    from cdr_fs.fit import fit_series
+
+    config = load_config(args.config)
+    distances = _read_stage(config, "emd", "emd")
+    table, report = fit_series(config, distances)
+    print(report.summary())
+    _write(config, table, "fit")
+    return 0
+
+
+def _select(args: argparse.Namespace) -> int:
+    from cdr_fs.select import select_features
+
+    config = load_config(args.config)
+    fits = _read_stage(config, "fit", "fit")
+    retained, evidence, report = select_features(config, fits)
+    print(report.summary())
+
+    _write(config, evidence, "select_evidence")
+    destination = Path(config.output.dir)
+    target = destination / "selected.txt"
+    target.write_text("\n".join(retained) + "\n", encoding="utf-8")
+    print(f"wrote {target}  ({len(retained)} feature(s))")
     return 0
 
 

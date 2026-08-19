@@ -272,24 +272,30 @@ INVALID_CASES: list[tuple[str, dict[str, str | None], str]] = [
     # --- fit -----------------------------------------------------------------
     ("unknown model", {"fit.models": "BC4,LL5"}, "names unknown model(s): LL5"),
     (
-        "log_dose without a dose vector",
-        {"fit.x_scale": "log_dose"},
+        "dose axis without a dose vector",
+        {"fit.x_scale": "dose"},
         "[design] dose is empty",
     ),
     (
-        "log_dose with a non-positive dose",
+        "dose axis with a non-positive dose",
         {
-            "fit.x_scale": "log_dose",
+            "fit.x_scale": "dose",
             "design.dose": "0,19.88,34.8,60.9,106.58,186.54,326.47,571.38,1000",
         },
         "non-positive value(s): 10=0",
+    ),
+    (
+        # It was in the plan, and it is a trap: the models log x themselves.
+        "log_dose is not an x_scale",
+        {"fit.x_scale": "log_dose"},
+        "expected one of: rank, dose",
     ),
     (
         "more parameters than points",
         {"design.levels": "10,9,8,7,6", "design.exclude_from_fit": "6"},
         "more points than parameters",
     ),
-    ("unknown x_scale", {"fit.x_scale": "linear"}, "expected one of: rank, dose, log_dose"),
+    ("unknown x_scale", {"fit.x_scale": "linear"}, "expected one of: rank, dose"),
     # --- select --------------------------------------------------------------
     (
         "slope rule without the linear model",

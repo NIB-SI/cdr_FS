@@ -4,11 +4,11 @@ Selects morphological features in high-content screening by fitting
 concentration/dose–response models to earth mover's distance scores between control and
 treated cell populations.
 
-> **Status: under construction.** The scaffold and the configuration, schema and trimming
-> stages are in place; the EMD engine, the model fitting, the retention rule, the plots and
-> the pruning are not yet. See [Status](#status) for what runs today. Until the golden
-> regression passes, treat this repository as work in progress rather than a tool to
-> depend on.
+> **Status: under construction.** Everything up to and including the retention rule is in
+> place; the diagnostic plots, the correlation pruning and the subsetting step are not. See
+> [Status](#status) for what runs today. The EMD stage reproduces the published tables
+> exactly; the selection stage reproduces the *corrected* pipeline rather than the article,
+> for the reason given under [Which run is "published"?](#which-run-is-published).
 
 ## The method
 
@@ -52,9 +52,9 @@ prose uses the en dash; the package itself is plain lowercase `cdr_fs`.
 | Metadata/feature resolution, table reading | `schema.py` | done |
 | Extreme-value trimming (optional) | `trim.py` | done |
 | Contrast-driven EMD engine | `emd.py` | done |
-| The six models, AIC/BIC | `models.py` | not started |
-| Fitting to a results table | `fit.py` | not started |
-| Retention rule | `select.py` | not started |
+| The six models, AIC/BIC | `models.py` | done (lifted verbatim) |
+| Fitting to a results table | `fit.py` | done |
+| Retention rule | `select.py` | done |
 | Diagnostic plots | `plots.py` | not started |
 | Correlation pruning (optional) | `prune.py` | not started |
 | Applying a selected list to the data | `subset.py` | not started |
@@ -66,6 +66,8 @@ cdr-fs check -c config.ini          # validate the configuration, report the sch
 cdr-fs check -c config.ini --scan   # also confirm the design occurs in the data
 cdr-fs trim  -c config.ini          # write the trimmed table  (--dry-run to just report)
 cdr-fs emd   -c config.ini          # distances per feature, stratum and contrast
+cdr-fs fit   -c config.ini          # fit the six models to each distance series
+cdr-fs select -c config.ini         # apply the retention rule
 ```
 
 Every stage that needs cell-level data reads `[input] table` and applies the configured
@@ -73,8 +75,11 @@ trim itself, so there is no requirement to materialise a trimmed copy — on the
 dataset that copy would be another 3.7 GB. `cdr-fs trim` exists to write it out for
 inspection, not because later stages need it.
 
-`cdr-fs emd` writes `emd.tsv` (control against each level) and `emd_baseline.tsv`
-(control against control, between replicates) into `[output] dir`.
+Each stage reads the previous one's output from `[output] dir` under a stable name:
+`cdr-fs emd` writes `emd.tsv` (control against each level) and `emd_baseline.tsv` (control
+against control, between replicates); `cdr-fs fit` writes `fit.tsv`; `cdr-fs select` writes
+`selected.txt` and `select_evidence.tsv`, the latter recording per feature and stratum which
+model won, by how much, and what the linear slope was.
 
 Every other subcommand exists in `--help` and refuses to run, naming the stage that is
 missing. The nine original scripts are kept unmodified in [`legacy/`](legacy/README.md) as
@@ -114,7 +119,7 @@ rejected for the same reason.
 | | `pool_over` | *(empty)* | replicate column merged into one distribution |
 | `design` | `control` | *required* | the control level's label |
 | | `levels` | *required* | exposure levels, ordered **low to high** — this is the response axis |
-| | `dose` | *(empty)* | actual doses, index-matched to `levels`; needed only for `x_scale = dose`/`log_dose` |
+| | `dose` | *(empty)* | actual doses, index-matched to `levels`; needed only for `x_scale = dose` |
 | | `exclude_from_fit` | *(empty)* | levels withheld from fitting but still measured |
 | `trim` | `enabled` | *required* | trimming changes the data, so it must be stated |
 | | `lower_percentile`, `upper_percentile` | *required when enabled* | the interval kept is closed |
@@ -123,7 +128,7 @@ rejected for the same reason.
 | | `baseline` | `control_across_replicates` | the between-replicate reproducibility floor, or `none` |
 | | `per_replicate` | `false` | see [Pooling replicates](#pooling-replicates) |
 | `fit` | `models` | all six | any subset of `BC4,BC5,LL4,WB1.4,Lin,Con` |
-| | `x_scale` | `rank` | `rank`, `dose` or `log_dose` |
+| | `x_scale` | `rank` | `rank` (position in the series) or `dose` |
 | | `rank_by` | `aic_plus_bic` | `aic_plus_bic`, `aic` or `bic` |
 | `select` | `slope_positive` | `any` | positive linear slope on `any` or `all` strata |
 | | `nonconstant` | `all` | constant model beaten on `any` or `all` strata |
@@ -143,10 +148,14 @@ scripts:
 - **The two halves of the retention rule.** They use *different* quantifiers: a positive
   slope on **any** stratum, non-constant on **all** strata. Separate keys make that
   visible, and let you choose `all`/`all` for the stricter rule.
-- **The fit's x-axis.** `rank` fits against the position of a level in the series.
-  For a geometric dose series that is an exact affine transform of log-dose, so it is
-  equivalent to `log_dose`; for an irregular series it is not, and `log_dose` is what you
-  want.
+- **The fit's x-axis.** `rank` fits against the position of a level in the series, which
+  is what the published run did; `dose` fits against the actual doses. These are *not*
+  equivalent, not even for a geometric series — the four sigmoid models evaluate `log(x)`
+  themselves, so `dose` is the one that gives a standard log-logistic in dose. Only `Lin`
+  and `Con` are invariant, and the sign of the linear slope is preserved either way, so the
+  slope half of the retention rule is unaffected while the sigmoid models simply fit less
+  well against rank. Conservative rather than wrong — and the default, because it is what
+  was published.
 
 ### One warning worth reading before you write `metadata_patterns`
 

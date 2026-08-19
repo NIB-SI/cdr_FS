@@ -38,7 +38,10 @@ SEPARATORS = {"tab": "\t", "comma": ",", "semicolon": ";"}
 MODELS = ("BC4", "BC5", "LL4", "WB1.4", "Lin", "Con")
 #: Free parameters per model, used to check the fit is identifiable at all.
 MODEL_PARAMS = {"BC4": 4, "BC5": 5, "LL4": 4, "WB1.4": 4, "Lin": 2, "Con": 1}
-X_SCALES = ("rank", "dose", "log_dose")
+# No "log_dose": the four sigmoid models already evaluate log(x) internally, so
+# handing them log(dose) would log it twice - and would be NaN for any dose below 1.
+# "dose" is what yields a standard log-logistic in dose.
+X_SCALES = ("rank", "dose")
 RANK_BY = ("aic_plus_bic", "aic", "bic")
 QUANTIFIERS = ("any", "all")
 BASELINES = ("control_across_replicates", "none")
@@ -700,13 +703,15 @@ def _read_fit(reader: _Reader, design: DesignSpec) -> FitSpec:
             f"  available: {', '.join(MODELS)}",
         )
     x_scale = reader.choice("fit", "x_scale", X_SCALES, default="rank")
-    if x_scale in ("dose", "log_dose") and design.dose is None:
+    if x_scale == "dose" and design.dose is None:
         raise reader.fail(
             "fit",
             "x_scale",
-            f"is {x_scale!r}, which needs the actual doses, but [design] dose is empty",
+            "is 'dose', which needs the actual doses, but [design] dose is empty",
         )
-    if x_scale == "log_dose" and design.dose is not None:
+    if x_scale == "dose" and design.dose is not None:
+        # The four sigmoid models evaluate log(x) internally, so a non-positive dose puts
+        # a negative number into a logarithm and the fit silently becomes NaN.
         nonpositive = [
             f"{level}={value:g}"
             for level, value in zip(design.levels, design.dose)
@@ -716,8 +721,10 @@ def _read_fit(reader: _Reader, design: DesignSpec) -> FitSpec:
             raise reader.fail(
                 "fit",
                 "x_scale",
-                f"is 'log_dose' but [design] dose has non-positive value(s): "
-                f"{', '.join(nonpositive)}",
+                f"is 'dose' but [design] dose has non-positive value(s): "
+                f"{', '.join(nonpositive)}\n"
+                f"  the concentration-response models take log(x), so a dose of zero or "
+                f"less cannot be fitted",
             )
 
     spec = FitSpec(
