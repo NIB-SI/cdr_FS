@@ -34,6 +34,21 @@ def sample(rows: int = 600, seed: int = 7) -> pd.DataFrame:
     return frame
 
 
+def sample_with_infinities(rows: int = 600, seed: int = 7) -> pd.DataFrame:
+    """Like `sample`, but with the infinities real AreaShape_FormFactor columns carry.
+
+    FormFactor is 4*pi*Area / Perimeter^2, so an organelle object whose perimeter rounds to
+    zero gives inf. `f2` gets a scattering of them, `f3` one single infinity, which is
+    enough to empty every group it touches.
+    """
+    frame = sample(rows, seed)
+    rng = np.random.default_rng(seed + 1)
+    frame.loc[rng.choice(rows, 25, replace=False), "f2"] = np.inf
+    frame.loc[frame.index[0], "f3"] = np.inf
+    frame.loc[frame.index[1], "f3"] = -np.inf
+    return frame
+
+
 def original_loop(frame, features, scope, lower, upper):
     """The trimming loop of `only_trimming_well.py`, as the oracle for this rewrite."""
 
@@ -55,9 +70,10 @@ def original_loop(frame, features, scope, lower, upper):
     return pd.concat(parts).loc[frame.index]
 
 
+@pytest.mark.parametrize("builder", [sample, sample_with_infinities], ids=["finite", "with-inf"])
 @pytest.mark.parametrize(("lower", "upper"), [(2.5, 97.5), (0.0, 100.0), (10.0, 90.0)])
-def test_matches_the_original_per_group_loop(lower, upper):
-    frame = sample()
+def test_matches_the_original_per_group_loop(builder, lower, upper):
+    frame = builder()
     trimmed, _ = trim_extremes(frame, FEATURES, SCOPE, lower, upper)
     expected = original_loop(frame, FEATURES, SCOPE, lower, upper)
     for feature in FEATURES:
@@ -83,13 +99,64 @@ def test_metadata_is_untouched():
         assert trimmed[column].equals(frame[column])
 
 
-def test_interval_is_closed_so_a_group_is_never_emptied():
-    # The values sitting exactly on the percentile bounds survive, which is why the
-    # report's empty cells are always cells that arrived empty.
+def test_finite_group_is_never_emptied():
+    # With finite data the values sitting exactly on the percentile bounds survive, so a
+    # group that had data still has data.
     frame = pd.DataFrame({"day": ["D1"] * 5, "well": ["A01"] * 5, "f1": [1.0, 2, 3, 4, 5]})
     trimmed, report = trim_extremes(frame, ["f1"], SCOPE, 2.5, 97.5)
     assert trimmed["f1"].notna().sum() >= 1
     assert report.empty_cells == 0
+
+
+def test_one_infinity_empties_its_whole_group():
+    """The mechanism behind two features missing from the published EMD tables.
+
+    A percentile interpolating into an infinite tail is NaN, nothing satisfies
+    `value <= nan`, and the entire (group, feature) cell is discarded. One infinity in a
+    group of a thousand is enough. Reproduced deliberately: it is what the published run
+    did, and `drop = (v < lo) | (v > hi)` would *not* reproduce it.
+    """
+    frame = pd.DataFrame(
+        {
+            "day": ["D1"] * 10 + ["D5"] * 10,
+            "well": ["A01"] * 20,
+            "f1": [*np.arange(9.0), np.inf, *np.arange(10.0)],
+        }
+    )
+    trimmed, report = trim_extremes(frame, ["f1"], SCOPE, 2.5, 97.5)
+    assert trimmed.loc[trimmed["day"] == "D1", "f1"].isna().all()  # emptied
+    assert trimmed.loc[trimmed["day"] == "D5", "f1"].notna().any()  # untouched neighbour
+    assert report.values_nonfinite == 1
+    assert report.features_with_nonfinite == ("f1",)
+    assert report.empty_cells == 1
+
+
+def test_whether_an_infinity_empties_a_cell_depends_on_how_many_there_are():
+    """What an infinity does depends on where the percentile's bracketing pair lands.
+
+    numpy interpolates a percentile two different ways. With the fractional position
+    `t >= 0.5` it computes `b - (b-a)*(1-t)`, so an infinite `b` gives `inf - inf = NaN`,
+    the keep mask is empty, and the whole cell is discarded. With `t < 0.5` it computes
+    `a + (b-a)*t`, which gives `+inf`, and then `inf <= inf` holds and the infinity is
+    *kept* - it survives trimming and flows on into the distance computation.
+
+    Which branch applies depends on the group size, so "this feature carries infinities"
+    does not tell you what happened to it. Hence the report states both the infinities
+    found and the cells actually emptied. All of this is inherited behaviour: the
+    parametrized oracle test above confirms it matches the original loop exactly.
+    """
+    frame = sample_with_infinities()
+    trimmed, report = trim_extremes(frame, FEATURES, SCOPE, 2.5, 97.5)
+    assert report.values_nonfinite == 27
+    assert set(report.features_with_nonfinite) == {"f2", "f3"}
+    # f2 carries ~2 infinities per group, enough to reach the p97.5 bracket in most.
+    assert set(report.features_with_empty_cells) == {"f2"}
+    # f3's lone infinities fall outside the bracket, so they are merely dropped.
+    assert trimmed["f3"].notna().sum() > 0
+    assert not np.isinf(trimmed["f3"].to_numpy()).any()
+    # ...but two of f2's land in groups small enough for the t < 0.5 branch, and survive.
+    assert np.isinf(trimmed["f2"].to_numpy()).sum() == 2
+    assert "infinite value(s)" in report.summary()
 
 
 def test_trims_within_each_group_independently():

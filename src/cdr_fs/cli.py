@@ -23,7 +23,6 @@ __all__ = ["main"]
 #: Stages still to be built, and where they land. Kept explicit so `--help` cannot
 #: imply a stage exists before it does.
 PENDING = {
-    "emd": "the contrast-driven EMD engine (phase 2)",
     "fit": "model fitting and information-criterion ranking (phase 3)",
     "select": "the retention rule (phase 3)",
     "prune": "correlation-based redundancy pruning (phase 5)",
@@ -83,6 +82,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="report what would be trimmed without writing the trimmed table",
     )
     trim.set_defaults(handler=_trim)
+
+    emd = _add(
+        subparsers,
+        "emd",
+        "earth mover's distance between control and each exposure level",
+    )
+    emd.set_defaults(handler=_emd)
 
     for command, description in PENDING.items():
         pending = _add(subparsers, command, f"{description} [not yet implemented]")
@@ -304,17 +310,16 @@ def _scan(config: Config) -> list[str]:
     return config.validate_observed(levels=levels, strata=strata)
 
 
-def _trim(args: argparse.Namespace) -> int:
+def _prepare(config: Config, *, trim: bool = True):
+    """Read the input table, validate it against the configuration, and trim it.
+
+    Every stage that needs cell-level data starts here, so trimming is applied once from
+    `[input] table` rather than being inherited from a materialised intermediate. That is
+    why `cdr-fs trim` is optional: it exists to write the trimmed table out for inspection,
+    not because later stages need the file.
+    """
     from cdr_fs.schema import read_header, read_table, resolve_schema
     from cdr_fs.trim import trim_extremes
-
-    config = load_config(args.config)
-    if not config.trim.enabled:
-        print(
-            "error: [trim] enabled is false, so there is nothing to do",
-            file=sys.stderr,
-        )
-        return 3
 
     columns = read_header(config.input.table, config.input.sep)
     for warning in config.validate_columns(columns):
@@ -328,31 +333,66 @@ def _trim(args: argparse.Namespace) -> int:
         metadata=resolved.metadata,
         features=resolved.features,
     )
-    levels = set(frame[config.schema.condition])
-    strata = set(frame[config.schema.group_by]) if config.schema.group_by else None
-    for warning in config.validate_observed(levels=levels, strata=strata):
+    print(f"  {len(frame):,} row(s), {len(resolved.features)} feature(s)")
+    for warning in config.validate_observed(
+        levels=set(frame[config.schema.condition]),
+        strata=set(frame[config.schema.group_by]) if config.schema.group_by else None,
+    ):
         print(f"warning: {warning}", file=sys.stderr)
 
-    frame, report = trim_extremes(
-        frame,
-        resolved.features,
-        config.trim.scope,
-        config.trim.lower_percentile,
-        config.trim.upper_percentile,
-        inplace=True,
-    )
-    print(report.summary())
+    if trim and config.trim.enabled:
+        frame, report = trim_extremes(
+            frame,
+            resolved.features,
+            config.trim.scope,
+            config.trim.lower_percentile,
+            config.trim.upper_percentile,
+            inplace=True,
+        )
+        print(report.summary())
+    return frame, resolved
 
+
+def _write(config: Config, table, name: str):
+    destination = Path(config.output.dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    target = destination / f"{name}{_EXTENSIONS[config.input.sep_keyword]}"
+    table.to_csv(target, sep=config.input.sep, index=False)
+    print(f"wrote {target}  ({_human_bytes(target.stat().st_size)})")
+    return target
+
+
+def _trim(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    if not config.trim.enabled:
+        print(
+            "error: [trim] enabled is false, so there is nothing to do",
+            file=sys.stderr,
+        )
+        return 3
+
+    frame, _ = _prepare(config)
     if args.dry_run:
         print("dry run - nothing written")
         return 0
+    _write(config, frame, "trimmed")
+    return 0
 
-    destination = Path(config.output.dir)
-    destination.mkdir(parents=True, exist_ok=True)
-    target = destination / f"trimmed{_EXTENSIONS[config.input.sep_keyword]}"
-    print(f"writing {target} ...", flush=True)
-    frame.to_csv(target, sep=config.input.sep, index=False)
-    print(f"wrote {target}  ({_human_bytes(target.stat().st_size)})")
+
+def _emd(args: argparse.Namespace) -> int:
+    from cdr_fs.emd import compute_baseline, compute_contrasts
+
+    config = load_config(args.config)
+    frame, resolved = _prepare(config)
+
+    contrasts, report = compute_contrasts(config, frame, resolved.features)
+    print(report.summary())
+    _write(config, contrasts, "emd")
+
+    if config.emd.baseline != "none":
+        baseline, baseline_report = compute_baseline(config, frame, resolved.features)
+        print(baseline_report.summary())
+        _write(config, baseline, "emd_baseline")
     return 0
 
 

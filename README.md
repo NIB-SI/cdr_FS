@@ -51,7 +51,7 @@ prose uses the en dash; the package itself is plain lowercase `cdr_fs`.
 | Configuration loading and validation | `config.py` | done |
 | Metadata/feature resolution, table reading | `schema.py` | done |
 | Extreme-value trimming (optional) | `trim.py` | done |
-| Contrast-driven EMD engine | `emd.py` | not started |
+| Contrast-driven EMD engine | `emd.py` | done |
 | The six models, AIC/BIC | `models.py` | not started |
 | Fitting to a results table | `fit.py` | not started |
 | Retention rule | `select.py` | not started |
@@ -65,7 +65,16 @@ Working today:
 cdr-fs check -c config.ini          # validate the configuration, report the schema
 cdr-fs check -c config.ini --scan   # also confirm the design occurs in the data
 cdr-fs trim  -c config.ini          # write the trimmed table  (--dry-run to just report)
+cdr-fs emd   -c config.ini          # distances per feature, stratum and contrast
 ```
+
+Every stage that needs cell-level data reads `[input] table` and applies the configured
+trim itself, so there is no requirement to materialise a trimmed copy — on the reference
+dataset that copy would be another 3.7 GB. `cdr-fs trim` exists to write it out for
+inspection, not because later stages need it.
+
+`cdr-fs emd` writes `emd.tsv` (control against each level) and `emd_baseline.tsv`
+(control against control, between replicates) into `[output] dir`.
 
 Every other subcommand exists in `--help` and refuses to run, naming the stage that is
 missing. The nine original scripts are kept unmodified in [`legacy/`](legacy/README.md) as
@@ -238,8 +247,23 @@ pytest
 The suite needs no large data. `tests/fixtures/columns_published.txt` carries the real 481
 column names, so the metadata/feature arithmetic is asserted against the published schema
 in CI; trimming is checked against the original per-group `np.nanpercentile` loop as its
-oracle; and `tests/cases.py` holds the table of misconfigurations that must be rejected,
-one entry per validation rule.
+oracle, on data with and without infinities; the EMD engine is exercised on designs that
+deliberately are *not* the RTgill-W1 one; and `tests/cases.py` holds the table of
+misconfigurations that must be rejected, one entry per validation rule.
+
+The golden regression compares against the published run itself, so it needs the 3.7 GB
+input and the two published EMD tables in `data/`. It skips when they are absent, and
+skips when they are present unless you opt in, because it takes minutes:
+
+```bash
+CDR_FS_GOLDEN=1 pytest tests/test_golden.py -v
+```
+
+It reproduces the published EMD tables from the untrimmed input: 16,946 treatment
+distances and 11,292 baseline distances, every population size matching exactly and every
+distance within 1e-9 relative. Population sizes are the sharper comparison — they are
+integers, so no tolerance can hide a difference, and their matching is what shows the trim
+step was reproduced value for value.
 
 ## Licence and citation
 
