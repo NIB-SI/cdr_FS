@@ -454,7 +454,7 @@ def _write_list(config: Config, features: list[str], name: str) -> Path:
 
 def _read_stage(config: Config, name: str, produced_by: str):
     """Read a previous stage's output, or say which command produces it."""
-    import pandas as pd
+    from cdr_fs.schema import read_stage_table
 
     target = (
         Path(config.output.dir) / f"{name}{_EXTENSIONS[config.input.sep_keyword]}"
@@ -463,7 +463,7 @@ def _read_stage(config: Config, name: str, produced_by: str):
         raise ConfigError(
             f"{target} is missing - run `cdr-fs {produced_by} -c {config.path}` first"
         )
-    return pd.read_csv(target, sep=config.input.sep, dtype={"feature": str, "stratum": str})
+    return read_stage_table(target, config.input.sep)
 
 
 def _trim(args: argparse.Namespace) -> int:
@@ -507,6 +507,15 @@ def _fit(args: argparse.Namespace) -> int:
     distances = _read_stage(config, "emd", "emd")
     table, report = fit_series(config, distances)
     print(report.summary())
+    if table.empty:
+        # An empty fit table is not a result: `select` would read it and retain nothing,
+        # which looks like "no feature responds" rather than "nothing was fitted".
+        print(
+            "error: no series was fitted, so there is nothing to select from - see the "
+            "report above for which features were incomplete",
+            file=sys.stderr,
+        )
+        return 3
     _write(config, table, "fit")
     return 0
 
@@ -542,6 +551,9 @@ def _prune(args: argparse.Namespace) -> int:
             f"{selected} is missing - run `cdr-fs select -c {config.path}` first"
         )
     features = read_feature_list(selected)
+    if not features:
+        print(f"error: {selected.name} is empty, so there is nothing to prune", file=sys.stderr)
+        return 3
     frame, _ = _prepare(config)
 
     kept, clusters, tree, report = prune_features(config, frame, features)
@@ -571,6 +583,10 @@ def _subset(args: argparse.Namespace) -> int:
     print(f"applying {source.name}")
 
     features = read_feature_list(source)
+    if not features:
+        # Otherwise the output is a metadata-only table, which looks like a result.
+        print(f"error: {source.name} is empty, so there is nothing to subset", file=sys.stderr)
+        return 3
     frame, resolved = _prepare(config)
     subset, quality, report = subset_table(
         frame,
@@ -593,6 +609,7 @@ def _plot(args: argparse.Namespace) -> int:
     import pandas as pd
 
     from cdr_fs.plots import plot_dendrogram, plot_distribution, plot_fit_panels
+    from cdr_fs.schema import read_stage_table
     from cdr_fs.subset import read_feature_list
 
     config = load_config(args.config)
@@ -622,9 +639,7 @@ def _plot(args: argparse.Namespace) -> int:
 
     drawn: list[Path] = []
     skipped: list[str] = []
-    read = lambda target: pd.read_csv(  # noqa: E731 - one expression, used four times
-        target, sep=config.input.sep, dtype={"feature": str, "stratum": str}
-    )
+    read = lambda target: read_stage_table(target, config.input.sep)  # noqa: E731
 
     if "fits" in wanted:
         distances, fits = available("emd"), available("fit")

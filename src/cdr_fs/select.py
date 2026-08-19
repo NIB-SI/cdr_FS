@@ -84,7 +84,9 @@ class SelectReport:
                 f"  rule: positive slope on {self.slope_quantifier} stratum/strata, "
                 f"constant model beaten on {self.nonconstant_quantifier}, "
                 f"ranked by {self.score}",
-                f"  strata: {', '.join(self.strata)}",
+                # An unstratified experiment has one stratum whose label is "", which
+                # would otherwise print as though the line had lost its value.
+                f"  strata: {', '.join(self.strata) or '(one, unstratified)'}",
                 f"  rejected: {self.rejected_slope:,} for slope, "
                 f"{self.rejected_constant:,} for being no better than constant",
             ]

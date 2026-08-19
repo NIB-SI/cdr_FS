@@ -20,6 +20,10 @@ feature. Enumerate the QC columns individually instead.
 `ResolvedSchema.prefix_breakdown` exists to make that class of mistake visible: it
 groups the resolved features by leading name token, so `counts_ -> 2` shows up next to
 `rp_ -> 469` in the output of `cdr-fs check`.
+
+`read_stage_table` is the other reader here: it reads back the tables the stages write,
+rather than the input table, and exists because one of their columns does not survive a
+naive round trip. See its docstring.
 """
 
 from __future__ import annotations
@@ -35,7 +39,13 @@ from cdr_fs.config import ConfigError
 if TYPE_CHECKING:  # pragma: no cover - import cost is why this is guarded
     import pandas as pd
 
-__all__ = ["ResolvedSchema", "read_header", "read_table", "resolve_schema"]
+__all__ = [
+    "ResolvedSchema",
+    "read_header",
+    "read_stage_table",
+    "read_table",
+    "resolve_schema",
+]
 
 
 @dataclass(frozen=True)
@@ -197,4 +207,25 @@ def read_table(
     if strip:
         for column in metadata:
             frame[column] = frame[column].str.strip()
+    return frame
+
+
+def read_stage_table(path: str | Path, sep: str) -> pd.DataFrame:
+    """Read a table written by one of the stages - `emd.tsv`, `fit.tsv`, and so on.
+
+    Use this rather than a bare `pandas.read_csv`, because the empty string is a
+    meaningful value in these tables and does not survive the round trip on its own. An
+    experiment with no `[schema] group_by` has exactly one stratum, whose label is `""`;
+    written to a delimited file that is an empty field, and pandas reads an empty field as
+    NaN whatever dtype it is given. Every stage downstream groups by `stratum`, and
+    `groupby` drops NaN keys by default - so the whole table would vanish, quietly, and
+    only for the unstratified design. Filling those back to `""` on the way in is what
+    keeps a single-stratum run working.
+    """
+    import pandas as pd
+
+    frame = pd.read_csv(path, sep=sep, dtype={"feature": str, "stratum": str})
+    for column in ("feature", "stratum"):
+        if column in frame.columns:
+            frame[column] = frame[column].fillna("")
     return frame

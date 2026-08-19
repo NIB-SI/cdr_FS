@@ -263,8 +263,10 @@ def cluster_features(
         )
     if count < 2:
         # squareform has no condensed form for a single point, and scipy's linkage rejects
-        # an empty observation set.
-        return [tuple(range(count))], np.empty((0, 4), dtype=np.float64)
+        # an empty observation set. No features means no clusters - not one empty cluster,
+        # which is a cluster with no representative to keep.
+        groups = [(0,)] if count else []
+        return groups, np.empty((0, 4), dtype=np.float64)
 
     tree = scipy_linkage(squareform(distance, checks=False), method=method)
 
@@ -394,7 +396,7 @@ def prune_features(
         features=len(features),
         kept=len(kept),
         singletons=int((sizes == 1).sum()),
-        largest=int(sizes.max()),
+        largest=int(sizes.max()) if sizes.size else 0,
         undefined_pairs=undefined,
         features_all_missing=tuple(
             name for name, column in zip(features, np.isnan(values).T) if column.all()
