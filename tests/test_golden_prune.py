@@ -48,6 +48,7 @@ EXPECTED = {
     "kept": 99,
     "singletons": 65,
     "largest": 11,
+    "after_missing_filter": 97,
 }
 
 pytestmark = [
@@ -112,6 +113,8 @@ def pruned(tmp_path_factory):
         "clusters": clusters,
         "linkage": tree,
         "report": report,
+        "frame": frame,
+        "metadata": schema.metadata,
     }
 
 
@@ -187,6 +190,33 @@ def test_how_loose_the_collapsing_actually_is(pruned):
     assert len(within) == EXPECTED["features_in"] - EXPECTED["kept"]
     assert within.median() == pytest.approx(0.0524, abs=5e-4)
     assert within.max() == pytest.approx(0.2150, abs=5e-4)
+
+
+def test_the_missing_data_filter_takes_two_more(pruned):
+    """The default 30% rule, over the whole table: 99 features become 97.
+
+    The two it removes are missing 47.0% and 95.2%, and the next thinnest feature is missing
+    13.0% - so the threshold sits on a wide plateau rather than on a knife edge. Anything from
+    14% to 46% gives the same 97. That is the number worth knowing about the choice: it is not
+    delicately tuned.
+    """
+    from cdr_fs.subset import subset_table
+
+    _, quality, report = subset_table(
+        pruned["frame"],
+        pruned["metadata"],
+        pruned["kept"],
+        drop_missing=True,
+        max_missing=30,
+    )
+    assert report.matched == EXPECTED["kept"]
+    assert report.kept == EXPECTED["after_missing_filter"]
+    assert [name for name, _ in report.dropped] == [
+        "rp_norm_AreaShape_FormFactor_RelateMitoCell",
+        "rp_norm_Mean_PunctaLyso_Distance_Minimum_Cytoplasm_FilteredNuclei",
+    ]
+    surviving = quality[~quality["dropped"]]["nonmissing_fraction"]
+    assert surviving.min() == pytest.approx(0.870, abs=5e-4)
 
 
 def test_the_linkage_table_describes_the_same_tree(pruned):

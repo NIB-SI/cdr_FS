@@ -38,6 +38,7 @@ def test_every_stage_leaves_its_output_where_the_next_one_looks(chain):
         "selected.txt",
         "subset_pruned.tsv",
         "subset_pruned_features.tsv",
+        "subset_pruned_retained.txt",
     ]
 
 
@@ -58,6 +59,13 @@ def test_the_subset_is_named_after_the_list_it_applied(chain):
     # Metadata first, and both groups in the input table's own order.
     assert columns == [column for column in source if column in set(columns)]
     assert [column for column in columns if column in set(pruned)] == pruned
+
+
+def test_the_retained_list_is_the_subset_header(chain):
+    """Three lists, three counts: selected, pruned, and what survived the missing-data filter."""
+    retained = (chain / "subset_pruned_retained.txt").read_text(encoding="utf-8").split()
+    columns = list(pd.read_csv(chain / "subset_pruned.tsv", sep="\t", nrows=1).columns)
+    assert [column for column in columns if column not in METADATA] == retained
 
 
 def test_subset_can_be_pointed_at_any_list(chain, tmp_path):

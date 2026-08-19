@@ -75,6 +75,7 @@ _ALLOWED: dict[str, tuple[frozenset[str], frozenset[str]]] = {
             {"threshold", "linkage", "representative", "aggregate_by", "fill_missing"}
         ),
     ),
+    "subset": (frozenset({"drop_missing"}), frozenset({"max_missing"})),
     "output": (frozenset({"dir"}), frozenset()),
 }
 
@@ -173,6 +174,13 @@ class PruneSpec:
 
 
 @dataclass(frozen=True)
+class SubsetSpec:
+    drop_missing: bool
+    #: Percent. A feature missing this much of the table or more is dropped.
+    max_missing: float
+
+
+@dataclass(frozen=True)
 class OutputSpec:
     dir: Path
 
@@ -188,6 +196,7 @@ class Config:
     fit: FitSpec
     select: SelectSpec
     prune: PruneSpec
+    subset: SubsetSpec
     output: OutputSpec
     #: "section.key" for every value that came from a default rather than the file.
     defaulted: tuple[str, ...]
@@ -465,6 +474,7 @@ def load_config(path: str | Path) -> Config:
     fit_spec = _read_fit(reader, design_spec)
     select_spec = _read_select(reader, schema_spec, fit_spec)
     prune_spec = _read_prune(reader, trim_spec)
+    subset_spec = _read_subset(reader)
     output_spec = OutputSpec(dir=Path(reader.text("output", "dir")))
 
     return Config(
@@ -477,6 +487,7 @@ def load_config(path: str | Path) -> Config:
         fit=fit_spec,
         select=select_spec,
         prune=prune_spec,
+        subset=subset_spec,
         output=output_spec,
         defaulted=tuple(reader.defaulted),
     )
@@ -788,6 +799,24 @@ def _read_select(
         slope_positive=slope_positive,
         nonconstant=nonconstant,
         strata=reader.unique("select", "strata", strata) if strata else None,
+    )
+
+
+def _read_subset(reader: _Reader) -> SubsetSpec:
+    # A filter that changes which columns leave the pipeline has to be stated, for the same
+    # reason [trim] enabled and [prune] enabled are required rather than defaulted.
+    return SubsetSpec(
+        drop_missing=reader.boolean("subset", "drop_missing"),
+        # Exclusive at zero: "missing 0% or more" is true of every feature, so a threshold of
+        # zero would empty the table rather than filter it.
+        max_missing=reader.number(
+            "subset",
+            "max_missing",
+            default="30",
+            minimum=0.0,
+            maximum=100.0,
+            exclude_minimum=True,
+        ),
     )
 
 

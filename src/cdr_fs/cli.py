@@ -246,6 +246,15 @@ def _describe(config: Config) -> list[str]:
             ),
             _field("fill_missing", config.prune.fill_missing),
         ]
+    lines += ["[subset]", _field("drop_missing", str(config.subset.drop_missing).lower())]
+    if config.subset.drop_missing:
+        lines.append(
+            _field(
+                "max_missing",
+                f"{config.subset.max_missing:g}%  (a feature missing this much of the "
+                f"table or more is dropped)",
+            )
+        )
     lines += ["[output]", _field("dir", str(config.output.dir))]
     return lines
 
@@ -525,12 +534,19 @@ def _subset(args: argparse.Namespace) -> int:
 
     features = read_feature_list(source)
     frame, resolved = _prepare(config)
-    subset, quality, report = subset_table(frame, resolved.metadata, features)
+    subset, quality, report = subset_table(
+        frame,
+        resolved.metadata,
+        features,
+        drop_missing=config.subset.drop_missing,
+        max_missing=config.subset.max_missing,
+    )
     print(report.summary())
 
     name = f"subset_{source.stem}"
     _write(config, subset, name)
     _write(config, quality, f"{name}_features")
+    _write_list(config, list(quality.loc[~quality["dropped"], "feature"]), f"{name}_retained")
     return 0
 
 

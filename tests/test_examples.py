@@ -53,6 +53,9 @@ def test_example_still_carries_the_published_defaults(localised):
     # Pruning correlates well-level medians, the same unit trimming works within.
     assert config.prune.aggregate_by == config.trim.scope
     assert config.prune.fill_missing == "column_mean"
+    # The missing-data filter, applied to the whole table rather than per subsample.
+    assert config.subset.drop_missing is True
+    assert config.subset.max_missing == 30.0
 
 
 def test_example_declares_no_real_paths():

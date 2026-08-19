@@ -82,6 +82,72 @@ def test_an_empty_list_yields_metadata_only():
     assert report.fraction_present == 0.0
 
 
+# -------------------------------------------------------------- the missing-data filter
+
+
+def test_nothing_is_dropped_unless_the_filter_is_on():
+    subset, quality, report = subset_table(table(), METADATA, ["zebra", "apple"])
+    assert "apple" in subset.columns  # 75% missing, and kept
+    assert not quality["dropped"].any()
+    assert report.dropped == () and report.kept == 2
+
+
+def test_a_feature_missing_too_much_of_the_table_is_dropped():
+    subset, quality, report = subset_table(
+        table(), METADATA, ["zebra", "apple"], drop_missing=True, max_missing=30
+    )
+    assert list(subset.columns) == [*METADATA, "zebra"]
+    assert report.dropped == (("apple", 0.75),)
+    assert report.matched == 2 and report.kept == 1
+    # The dropped feature stays in the quality table: the record of why it went.
+    assert quality["feature"].tolist() == ["zebra", "apple"]
+    assert quality["dropped"].tolist() == [False, True]
+    assert "missing 30% of the table or more" in report.summary()
+    assert "apple  75.0% missing" in report.summary()
+
+
+@pytest.mark.parametrize(
+    "max_missing, dropped",
+    [
+        (24, True),  # missing 25% >= 24
+        (25, True),  # the boundary is inclusive: at the threshold it goes
+        (26, False),
+        (100, False),  # only an entirely empty feature reaches 100%
+    ],
+)
+def test_the_threshold_is_inclusive(max_missing, dropped):
+    """A feature missing exactly the threshold is dropped, as the published rule had it."""
+    frame = pd.DataFrame(
+        {"Metadata_Day": list("abcd"), "quarter": [1.0, 2.0, 3.0, np.nan]}
+    )
+    _, quality, _ = subset_table(
+        frame, ["Metadata_Day"], ["quarter"], drop_missing=True, max_missing=max_missing
+    )
+    assert bool(quality["dropped"].iloc[0]) is dropped
+
+
+def test_an_entirely_empty_feature_goes_at_any_threshold():
+    frame = table()
+    frame["gone"] = np.nan
+    subset, _, report = subset_table(
+        frame, METADATA, ["zebra", "gone"], drop_missing=True, max_missing=100
+    )
+    assert "gone" not in subset.columns
+    assert report.dropped == (("gone", 1.0),)
+    # It was filtered out, so it is no longer among the problems left in the subset.
+    assert report.all_missing == ()
+
+
+def test_the_counts_describe_what_survived():
+    _, _, report = subset_table(
+        table(), METADATA, ["zebra", "apple", "flat"], drop_missing=True, max_missing=30
+    )
+    assert report.kept == 2
+    assert report.values_total == 4 * 2  # zebra and flat, not apple
+    assert report.values_present == 8
+    assert report.fraction_present == 1.0
+
+
 def test_the_list_reader_drops_blanks_and_duplicates(tmp_path):
     path = tmp_path / "features.txt"
     path.write_text("alpha\n\n  beta  \nalpha\n\n", encoding="utf-8")

@@ -26,7 +26,7 @@ describes better than a flat line?**
    best fit by AIC + BIC. A feature whose distance from the control is flat, or shrinks,
    carries no concentration-dependent signal and is dropped.
 4. Optionally collapse the survivors by correlation, keeping one representative per
-   cluster of near-redundant features.
+   cluster of near-redundant features, and drop any that are left too sparse to use.
 
 Using distributions rather than per-well means is the point: it detects a subpopulation
 shifting while the population mean stays put, which is what subcytotoxic exposure tends to
@@ -83,7 +83,7 @@ Each stage reads the previous one's output from `[output] dir` under a stable na
 | `fit` | `fit.tsv` |
 | `select` | `selected.txt`; `select_evidence.tsv` — per feature and stratum, which model won, by how much, and what the linear slope was |
 | `prune` | `pruned.txt`; `prune_clusters.tsv` — every feature with its cluster and how far it sits from the representative; `prune_linkage.tsv` — the tree and its leaf order, so the dendrogram can be drawn without recomputing a correlation |
-| `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column actually holds |
+| `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and whether the missing-data filter dropped it; `subset_<list>_retained.txt` — the features that survived, one per line |
 
 `cdr-fs run` exists in `--help` and refuses to run, naming what is missing. The nine original
 scripts are kept unmodified in [`legacy/`](legacy/README.md) as the reference each rewritten
@@ -109,7 +109,7 @@ reasoning behind each value in its comments; start by copying it.
 `.ini` carries no type information, so every value is parsed and cross-checked before any
 data is read. A wrong configuration fails in the first second with a message naming the
 section, the key and the fix, rather than producing plausible-looking wrong numbers. All
-nine sections must be present even when every key in them is left at its default, so that
+ten sections must be present even when every key in them is left at its default, so that
 a mistyped section name is an error instead of a silent fall-back; unknown keys are
 rejected for the same reason.
 
@@ -143,6 +143,8 @@ rejected for the same reason.
 | | `representative` | `alphabetical` | which member of a cluster to keep — `alphabetical` or `first` |
 | | `aggregate_by` | *(`[trim] scope`)* | columns identifying one experimental unit; correlations are computed between unit medians. Explicitly empty correlates the object rows as they are |
 | | `fill_missing` | `column_mean` | `column_mean` or `none` — see [Collapsing redundant features](#collapsing-redundant-features) |
+| `subset` | `drop_missing` | *required* | drop features too empty to carry; a filter on the output must be stated |
+| | `max_missing` | `30` | percent; a feature missing this much of the table **or more** is dropped |
 | `output` | `dir` | *required* | where results are written |
 
 Three things this configuration makes explicit that were previously implicit in the
@@ -263,6 +265,27 @@ sits at 0.215, which is `|r|` = 0.785. That is what chaining does, and it is why
 `prune_clusters.tsv` records the distance for every member rather than only the cluster
 number: it is the column to look at before trusting one feature to speak for a group.
 
+## Dropping features with too little data
+
+Trimming removes values rather than rows, so a feature can be missing for most objects and
+still be present as a column. `[subset] drop_missing` removes the ones too empty to be worth
+carrying: a feature missing `[subset] max_missing` percent of the table **or more** is left out,
+30% by default.
+
+It is applied over the **whole** table, before anything downstream subsamples. That is one
+decision for the whole experiment, so a feature is either in the analysis or out of it —
+whereas filtering each subsample separately lets the same feature be present in one day's file
+and absent from another, which makes the resulting sets incomparable.
+
+On the reference dataset the default takes 99 features to 97, dropping two that are missing 47%
+and 95% of their values. The next thinnest surviving feature is missing 13%, so anything from
+14% to 46% gives the same 97 — the threshold sits on a wide plateau rather than on a knife
+edge, which is the useful thing to know about choosing it.
+
+Nothing else is filtered. A constant feature, or one whose surviving values all come from a
+single object, is named in the report and flagged in `subset_<list>_features.tsv`; what to do
+about that depends on the analysis, and guessing is worse than saying so.
+
 ## Reproducing the published run
 
 `examples/published.ini` is the configuration of the run described in the article. Three
@@ -286,12 +309,15 @@ categorization, every cell of which is labelled in
 [HCS-proc's figure](https://github.com/NIB-SI/HCS-proc). Reproducing the count *and* the
 composition takes the same 99 features.
 
-**The article's final list is shorter than 99, and the difference is not this tool's.** The
-published pipeline went on to drop features with 30% or more missing values, along with two
-excluded by hand, when it built the subsets for its dimension-reduction analyses — per
-day-subset, downstream of feature selection. That filter belongs to the analysis that consumes
-the selection rather than to the selection itself, so `cdr-fs subset` applies none: it writes
-the per-feature counts the decision needs and leaves the threshold to whoever is choosing it.
+**The published run's final list is shorter than 99, and the last step of getting there moved.**
+The pipeline dropped features with 30% or more missing values — plus two excluded by hand — but
+it did so while building the subsets for its dimension-reduction analyses: *per day-subset*,
+downstream of the selection. `cdr-fs subset` applies the same 30% rule over the whole table
+instead, which takes 99 to **97**. Applying it once, before anything subsamples, is the change
+worth making: a feature is then either in the analysis or out of it, where a per-subsample
+decision lets the same feature be present in one day's file and absent from another. See
+[Dropping features with too little data](#dropping-features-with-too-little-data). The two
+hand-excluded features are not reproduced; a hardcoded exclusion list is not a rule.
 
 ### An aside that is really a check
 

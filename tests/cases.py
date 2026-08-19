@@ -55,6 +55,7 @@ BASE: dict[str, dict[str, str]] = {
     "fit": {},
     "select": {"strata": "D1,D5,D7,D9"},
     "prune": {"enabled": "true"},
+    "subset": {"drop_missing": "false"},
     "output": {"dir": "<output>"},
 }
 
@@ -345,6 +346,22 @@ INVALID_CASES: list[tuple[str, dict[str, str | None], str]] = [
         "aggregation column that is a feature",
         {"prune.aggregate_by": "counts_RelateLysoCell"},
         "[prune] aggregate_by",
+    ),
+    # --- subset --------------------------------------------------------------
+    (
+        "missing-data filter neither on nor off",
+        {"subset.drop_missing": None},
+        "[subset] drop_missing - is required",
+    ),
+    (
+        "missing-data threshold of zero",
+        {"subset.drop_missing": "true", "subset.max_missing": "0"},
+        "expected a number in (0, 100]",
+    ),
+    (
+        "missing-data threshold above a hundred percent",
+        {"subset.drop_missing": "true", "subset.max_missing": "130"},
+        "expected a number in (0, 100]",
     ),
 ]
 
