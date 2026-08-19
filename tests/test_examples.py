@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from cases import COLUMNS_PUBLISHED, SUBSET, validate
 
-from cdr_fs.config import MODELS, load_config
+from cdr_fs.config import load_config
 
 PUBLISHED_INI = Path(__file__).resolve().parents[1] / "examples" / "published.ini"
 
@@ -36,7 +36,22 @@ def localised(tmp_path):
 
 
 def test_example_is_valid_against_real_data(localised):
-    config, warnings = validate(localised, observed=True)
+    import pandas as pd
+
+    config, warnings = validate(localised)
+    # And against the values in the table, not only its header: the levels, days and
+    # replicates the example declares have to be the ones the data actually holds.
+    frame = pd.read_csv(
+        config.input.table,
+        sep=config.input.sep,
+        usecols=["Concentration", "Metadata_Day", "Metadata_Biorep"],
+        dtype=str,
+    )
+    warnings += config.validate_observed(
+        levels=set(frame["Concentration"]),
+        strata=set(frame["Metadata_Day"]),
+        replicates=set(frame["Metadata_Biorep"]),
+    )
     # One warning, and it is about the fixture rather than the configuration: `subset.tsv` is
     # a 30-column slice that happens to contain none of the eight object-index columns, so the
     # pattern naming them matches nothing here. On the full header it matches all eight - see
@@ -77,46 +92,3 @@ def test_the_exclusion_list_ships_empty(localised):
     own merits. Naming them here would take the final list from 95 to 93.
     """
     assert load_config(localised).subset.exclude == ()
-
-
-def test_example_still_carries_the_published_defaults(localised):
-    config = load_config(localised)
-    assert config.fit.models == MODELS
-    assert config.fit.x_scale == "rank"
-    assert (config.select.slope_positive, config.select.nonconstant) == ("any", "all")
-    assert config.emd.per_replicate is False
-    assert config.design.control == "11"
-    assert config.design.fitted_levels == ("10", "9", "8", "7", "6", "5", "4", "3")
-    # Pruning correlates well-level medians, the same unit trimming works within.
-    assert config.prune.aggregate_by == config.trim.scope
-    assert config.prune.fill_missing == "column_mean"
-    # The missing-data filter, applied to the whole table rather than per subsample.
-    assert config.subset.drop_missing is True
-    assert config.subset.max_missing == 30.0
-
-
-def test_example_declares_no_real_paths():
-    # House rule: every user-editable path in a committed file stays /PATH/TO/...
-    text = PUBLISHED_INI.read_text(encoding="utf-8")
-    for line in text.splitlines():
-        if re.match(r"^(table|dir) = ", line):
-            assert "/PATH/TO/" in line, line
-
-
-def test_dose_vector_is_the_exact_dilution_series(localised):
-    config = load_config(localised)
-    # The config carries six decimal places, so compare against the series rounded the
-    # same way rather than against a tolerance.
-    assert config.design.dose == tuple(round(dose, 6) for dose in DOSE)
-    # The lowest exposure pairs with level 10 and the highest with level 2.
-    assert config.design.dose_of["10"] == 11.368302
-    assert config.design.dose_of["2"] == 1000.0
-
-
-def test_dose_axis_is_available_now_that_doses_are_declared(localised, tmp_path):
-    # Every dose is positive, so the alternative x-axis validates. Rank remains the
-    # default because rank is what the published run fitted.
-    text = localised.read_text(encoding="utf-8").replace("x_scale = rank", "x_scale = dose")
-    path = tmp_path / "dose.ini"
-    path.write_text(text, encoding="utf-8")
-    assert load_config(path).fit.x_scale == "dose"

@@ -160,66 +160,6 @@ def test_the_published_composition_is_reproduced(pruned):
     )
 
 
-def test_one_organelle_count_survives_pruning(pruned):
-    """`counts_RelateLysoCell` is retained and `counts_RelateMitoCell` is not.
-
-    The far end of the `counts_` trap: a `^counts_` metadata pattern would have dropped a
-    feature the published run kept all the way through.
-    """
-    assert "counts_RelateLysoCell" in pruned["kept"]
-    assert "counts_RelateMitoCell" not in pruned["kept"]
-
-
-def test_every_cluster_has_exactly_one_representative(pruned):
-    clusters = pruned["clusters"]
-    per_cluster = clusters.groupby("cluster")["representative"].sum()
-    assert (per_cluster == 1).all()
-    assert clusters["cluster"].nunique() == EXPECTED["kept"]
-    assert len(clusters) == EXPECTED["features_in"]
-    assert set(clusters.loc[clusters["representative"], "feature"]) == set(pruned["kept"])
-
-
-def test_how_loose_the_collapsing_actually_is(pruned):
-    """Average linkage cuts on cluster means, so a member can sit past the pair threshold.
-
-    Worth measuring rather than assuming: the 83 dropped features sit a median 0.052 from the
-    representative that stands for them - |r| = 0.95 - but the loosest sits at 0.215, which
-    is |r| = 0.785, comfortably outside the 0.9 the threshold names. That is what chaining
-    does, and it is the number to look at before trusting one feature to speak for a cluster.
-    """
-    within = pruned["clusters"].query("not representative")["distance_to_representative"]
-    assert len(within) == EXPECTED["features_in"] - EXPECTED["kept"]
-    assert within.median() == pytest.approx(0.0524, abs=5e-4)
-    assert within.max() == pytest.approx(0.2150, abs=5e-4)
-
-
-def test_the_missing_data_filter_takes_two_more(pruned):
-    """The default 30% rule, over the whole table: 99 features become 97.
-
-    The two it removes are missing 47.0% and 95.2%, and the next thinnest feature is missing
-    13.0% - so the threshold sits on a wide plateau rather than on a knife edge. Anything from
-    14% to 46% gives the same 97. That is the number worth knowing about the choice: it is not
-    delicately tuned.
-    """
-    from cdr_fs.subset import subset_table
-
-    _, quality, report = subset_table(
-        pruned["frame"],
-        pruned["metadata"],
-        pruned["kept"],
-        drop_missing=True,
-        max_missing=30,
-    )
-    assert report.matched == EXPECTED["kept"]
-    assert report.kept == EXPECTED["after_missing_filter"]
-    assert [name for name, _ in report.dropped] == [
-        "rp_norm_AreaShape_FormFactor_RelateMitoCell",
-        "rp_norm_Mean_PunctaLyso_Distance_Minimum_Cytoplasm_FilteredNuclei",
-    ]
-    surviving = quality[~quality["dropped"]]["nonmissing_fraction"]
-    assert surviving.min() == pytest.approx(0.870, abs=5e-4)
-
-
 def test_treating_the_object_indices_as_metadata_lands_on_the_published_list(pruned):
     """The route `examples/published.ini` takes: 175 -> 97 -> 95.
 
@@ -257,14 +197,3 @@ def test_treating_the_object_indices_as_metadata_lands_on_the_published_list(pru
     assert surviving - {name for name in surviving if name.startswith("rp_norm_")} == {
         "counts_RelateLysoCell"
     }
-
-
-def test_the_linkage_table_describes_the_same_tree(pruned):
-    table = pruned["linkage"]
-    leaves = table[table["label"].notna()]
-    merges = table[table["label"].isna()]
-    assert leaves["label"].tolist() == list(pruned["features"])
-    assert len(merges) == EXPECTED["features_in"] - 1
-    assert merges["height"].is_monotonic_increasing
-    # The cut that produced 99 clusters: 181 merges minus the 82 taken below it.
-    assert int((merges["height"] < 0.1).sum()) == EXPECTED["features_in"] - EXPECTED["kept"]

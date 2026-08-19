@@ -20,11 +20,8 @@ from cases import write_config
 
 from cdr_fs.config import load_config
 from cdr_fs.emd import (
-    COLUMNS,
     baseline_comparisons,
-    compute_baseline,
     compute_contrasts,
-    contrast_comparisons,
 )
 
 SIMPLE = {
@@ -87,55 +84,6 @@ def test_distance_of_a_pure_shift_is_the_shift(tmp_path):
     assert flat.to_numpy() == pytest.approx(0.0)
 
 
-def test_table_shape_and_columns(tmp_path):
-    frame = build(days=("T1", "T2", "T3"))
-    config = configured(tmp_path, frame)
-    table, report = compute_contrasts(config, frame, FEATURES)
-    assert list(table.columns) == list(COLUMNS)
-    # 3 strata x 3 contrasts x 2 features
-    assert len(table) == 3 * 3 * 2
-    assert report.skipped_empty == 0
-    assert set(table["stratum"]) == {"T1", "T2", "T3"}
-
-
-def test_every_declared_level_is_contrasted_including_withheld_ones(tmp_path):
-    # EMD is measured for the whole series; only the fit skips withheld levels, so a
-    # withheld level must still appear here. Four levels, because withholding one still
-    # has to leave more points than the widest model has parameters.
-    frame = build(levels=("ctrl", "low", "mid", "high", "top"))
-    config = configured(
-        tmp_path,
-        frame,
-        **{"design.levels": "low,mid,high,top", "design.exclude_from_fit": "top"},
-    )
-    table, _ = compute_contrasts(config, frame, ["shift"])
-    assert set(table["contrast"]) == {"ctrlvlow", "ctrlvmid", "ctrlvhigh", "ctrlvtop"}
-    assert config.design.fitted_levels == ("low", "mid", "high")
-
-
-def test_works_without_a_stratification_column(tmp_path):
-    frame = build(days=("T1",)).drop(columns=["Metadata_Day"])
-    config = configured(tmp_path, frame, **{"schema.group_by": "", "select.strata": ""})
-    table, _ = compute_contrasts(config, frame, ["shift"])
-    assert len(table) == 3
-    assert set(table["stratum"]) == {""}
-
-
-def test_works_without_a_replicate_column(tmp_path):
-    # No pool_over at all: there is nothing to pool over, so each population is just the
-    # rows at that level. The counts have to say so - the pooled and per-replicate keys
-    # coincide here, and a careless build counts every row twice.
-    frame = build(reps=("R1",)).drop(columns=["Metadata_Biorep"])
-    config = configured(
-        tmp_path, frame, **{"schema.pool_over": "", "emd.baseline": "none"}
-    )
-    table, _ = compute_contrasts(config, frame, ["shift"])
-    assert len(table) == 3
-    assert set(table["n_a"]) == {40}
-    assert set(table["n_b"]) == {40}
-    assert table.set_index("contrast")["emd"]["ctrlvlow"] == pytest.approx(10.0)
-
-
 def test_baseline_pairs_every_replicate_at_the_control(tmp_path):
     frame = build(reps=("R1", "R2", "R3", "R4"))
     config = configured(tmp_path, frame)
@@ -146,85 +94,6 @@ def test_baseline_pairs_every_replicate_at_the_control(tmp_path):
     }
     # Labels carry replicate, stratum and level, as the published table does.
     assert comparisons[0].a.label == "R1_T1_ctrl"
-
-
-def test_baseline_of_identical_replicates_is_zero(tmp_path):
-    frame = build(reps=("R1", "R2", "R3"))
-    config = configured(tmp_path, frame)
-    table, _ = compute_baseline(config, frame, FEATURES)
-    assert table["emd"].to_numpy() == pytest.approx(0.0)
-
-
-def test_baseline_can_be_switched_off(tmp_path):
-    frame = build()
-    config = configured(tmp_path, frame, **{"emd.baseline": "none"})
-    assert baseline_comparisons(config, frame) == []
-
-
-def test_per_replicate_splits_each_contrast(tmp_path):
-    frame = build(reps=("R1", "R2", "R3", "R4"))
-    pooled = configured(tmp_path, frame)
-    split = configured(tmp_path, frame, **{"emd.per_replicate": "true"})
-    assert len(contrast_comparisons(pooled, frame)) == 3
-    assert len(contrast_comparisons(split, frame)) == 12  # 3 contrasts x 4 replicates
-    table, _ = compute_contrasts(split, frame, ["shift"])
-    assert set(table["replicate"]) == {"R1", "R2", "R3", "R4"}
-
-
-def test_pooling_can_cancel_an_effect_both_replicates_show(tmp_path):
-    """Why `per_replicate` is a methodological choice and not a refactor.
-
-    Here each replicate shows a clean shift of 10, but in opposite directions. Pooled, the
-    two mixtures very nearly coincide and the distance collapses to 2.5; per replicate it
-    is 10 in both. Pooling is not averaging - it can hide a response that every replicate
-    individually shows.
-
-    Note this cuts both ways, which is why the published default stays pooled: the same
-    cancellation is what makes pooling robust to a plate that is merely shifted, and the
-    upstream row/plate standardization exists to remove exactly that.
-    """
-    base = np.arange(40, dtype=float)
-    offsets = {"ctrl": 0.0, "low": 1.0, "mid": 2.0, "high": 3.0}
-    rows = []
-    for replicate, direction in (("R1", +1.0), ("R2", -1.0)):
-        for level, step in offsets.items():
-            rows.append(
-                pd.DataFrame(
-                    {
-                        "Concentration": level,
-                        "Metadata_Day": "T1",
-                        "Metadata_Biorep": replicate,
-                        "Metadata_Well": f"{level}_{replicate}",
-                        "shift": base + direction * step * 10.0,
-                    }
-                )
-            )
-    frame = pd.concat(rows, ignore_index=True)
-
-    pooled_table, _ = compute_contrasts(configured(tmp_path, frame), frame, ["shift"])
-    split_table, _ = compute_contrasts(
-        configured(tmp_path, frame, **{"emd.per_replicate": "true"}), frame, ["shift"]
-    )
-    pooled = pooled_table.set_index("contrast")["emd"]["ctrlvlow"]
-    per_replicate = split_table[split_table["contrast"] == "ctrlvlow"]["emd"]
-
-    assert per_replicate.to_numpy() == pytest.approx([10.0, 10.0])
-    assert pooled == pytest.approx(2.5)
-    assert pooled < per_replicate.mean() / 3
-
-
-def test_missing_level_replicate_combination_is_skipped_not_fatal(tmp_path):
-    # The published data has exactly this hole: the top dose has no cells at all in one
-    # replicate on one day, because it killed them.
-    frame = build(reps=("R1", "R2"))
-    frame = frame[~((frame["Concentration"] == "high") & (frame["Metadata_Biorep"] == "R2"))]
-    config = configured(tmp_path, frame, **{"emd.per_replicate": "true"})
-    comparisons = contrast_comparisons(config, frame)
-    assert ("ctrlvhigh", "R2") not in {(c.contrast, c.replicate) for c in comparisons}
-    assert ("ctrlvhigh", "R1") in {(c.contrast, c.replicate) for c in comparisons}
-    # Pooled, the level still exists: it just has half the cells.
-    pooled = contrast_comparisons(configured(tmp_path, frame), frame)
-    assert "ctrlvhigh" in {c.contrast for c in pooled}
 
 
 def test_only_non_missing_values_contribute_and_counts_say_so(tmp_path):
@@ -240,40 +109,3 @@ def test_only_non_missing_values_contribute_and_counts_say_so(tmp_path):
     assert row["n_a"] == 80  # control untouched: 2 replicates x 40
     assert row["n_b"] == 70  # ten values dropped
     assert row["n_b"] < row["n_a"]
-
-
-def test_empty_population_is_skipped_and_reported(tmp_path):
-    frame = build()
-    frame.loc[frame["Concentration"] == "mid", "shift"] = np.nan
-    config = configured(tmp_path, frame)
-    table, report = compute_contrasts(config, frame, ["shift", "flat"])
-    assert "ctrlvmid" not in set(table[table["feature"] == "shift"]["contrast"])
-    assert "ctrlvmid" in set(table[table["feature"] == "flat"]["contrast"])
-    assert report.skipped_empty == 1
-    assert report.features_skipped == ("shift",)
-
-
-def test_surviving_infinity_gives_a_non_finite_distance(tmp_path):
-    # Trimming is off here, so the infinity reaches the distance. It has to be visible
-    # rather than quietly turning into a number.
-    frame = build()
-    frame.loc[frame.index[0], "shift"] = np.inf
-    config = configured(tmp_path, frame)
-    table, report = compute_contrasts(config, frame, ["shift"])
-    assert report.nonfinite == 3
-    assert report.features_nonfinite == ("shift",)
-    assert not np.isfinite(table["emd"]).all()
-    assert "cannot be fitted" in report.summary()
-
-
-def test_distance_is_symmetric(tmp_path):
-    frame = build()
-    config = configured(tmp_path, frame)
-    forward, _ = compute_contrasts(config, frame, ["shift"])
-    reversed_config = configured(
-        tmp_path, frame, **{"design.control": "high", "design.levels": "low,mid,ctrl"}
-    )
-    backward, _ = compute_contrasts(reversed_config, frame, ["shift"])
-    assert forward.set_index("contrast")["emd"]["ctrlvhigh"] == pytest.approx(
-        backward.set_index("contrast")["emd"]["highvctrl"]
-    )

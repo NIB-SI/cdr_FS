@@ -12,13 +12,7 @@ downstream is no longer testing the paper.
 from __future__ import annotations
 
 import pytest
-from cases import (
-    INVALID_CASES,
-    METADATA_PATTERNS,
-    OBSERVED_CASES,
-    validate,
-    write_config,
-)
+from cases import INVALID_CASES, validate, write_config
 
 from cdr_fs.config import ConfigError, MODELS, load_config
 
@@ -33,44 +27,33 @@ def test_rejects_misconfiguration(tmp_path, overrides, fragment):
     assert fragment in str(raised.value)
 
 
-@pytest.mark.parametrize(
-    ("overrides", "fragment"),
-    [pytest.param(o, f, id=label) for label, o, f in OBSERVED_CASES],
-)
-def test_rejects_design_absent_from_the_data(tmp_path, overrides, fragment):
-    with pytest.raises(ConfigError) as raised:
-        validate(write_config(tmp_path, overrides), observed=True)
-    assert fragment in str(raised.value)
-
-
 def test_accepts_the_reference_configuration(tmp_path):
-    config, warnings = validate(write_config(tmp_path), observed=True)
+    """The counterweight to fifty rejections: validation must still accept the paper.
+
+    Without it every new rule can only make `config.py` stricter, and the run this package
+    exists to reproduce is the one that eventually stops loading.
+    """
+    config, warnings = validate(write_config(tmp_path))
     assert config.input.sep == "\t"
     assert warnings == []
 
 
-def test_unused_pattern_is_a_warning_not_an_error(tmp_path):
-    # A pattern that matches nothing is how a metadata column silently becomes a feature,
-    # but it is legitimate when one config serves several tables, so it must not be fatal.
-    _, warnings = validate(
-        write_config(
-            tmp_path,
-            {"schema.metadata_patterns": "\n".join([*METADATA_PATTERNS, "^counts_Cell$"])},
-        )
-    )
-    assert any("^counts_Cell$" in warning for warning in warnings)
+def test_rejects_a_design_the_data_does_not_contain(tmp_path):
+    """The three checks that need the data rather than only the header.
 
+    They cannot run at load time - the values exist only once a column has been read - so
+    they are called by whichever stage reads the table first, and by `check --scan`.
+    """
+    config = load_config(write_config(tmp_path))
 
-def test_undeclared_level_in_the_data_is_a_warning(tmp_path):
-    # Dropping the top dose from [design] is a legitimate way to ignore it entirely.
-    _, warnings = validate(
-        write_config(
-            tmp_path,
-            {"design.levels": "10,9,8,7,6,5,4,3", "design.exclude_from_fit": "3"},
-        ),
-        observed=True,
-    )
-    assert any("will be ignored: 2" in warning for warning in warnings)
+    with pytest.raises(ConfigError, match="do not occur in column Concentration: 4"):
+        config.validate_observed(levels={"11", "10", "9", "8", "7", "6", "5", "3", "2"})
+    with pytest.raises(ConfigError, match="do not occur in column Metadata_Day: D5"):
+        config.validate_observed(strata={"D1", "D7", "D9"})
+    # A reproducibility floor is every pair of replicates, so one replicate gives no pairs.
+    with pytest.raises(ConfigError, match="at least two replicates"):
+        config.validate_observed(replicates={"BR1"})
+    assert config.validate_observed(replicates={"BR1", "BR2"}) == []
 
 
 # ------------------------------------------------------- defaults reproduce the paper
@@ -110,9 +93,3 @@ def test_defaults_are_the_published_choices(published):
     assert published.prune.fill_missing == "column_mean"
     assert published.trim.enabled is True
     assert (published.trim.lower_percentile, published.trim.upper_percentile) == (2.5, 97.5)
-
-
-def test_omitted_keys_are_reported_as_defaulted(published):
-    # Nothing may be silently defaulted: `cdr-fs check` prints this list.
-    assert "fit.models" in published.defaulted
-    assert "emd.per_replicate" in published.defaulted

@@ -121,33 +121,17 @@ def write_config(
     return path
 
 
-def validate(path: Path, *, observed: bool = False):
-    """Everything `cdr-fs check` validates, in the same order, as one call.
+def validate(path: Path):
+    """Everything `cdr-fs check` validates from the file and the header, as one call.
 
-    Raises `ConfigError` for the first problem found. With `observed=True` it also reads
-    the condition and group_by columns and checks the declared design against them.
+    Raises `ConfigError` for the first problem found. The checks that need the data
+    itself live in `Config.validate_observed` and are exercised directly.
     """
     from cdr_fs.config import load_config
     from cdr_fs.schema import read_header
 
     config = load_config(path)
     warnings = config.validate_columns(read_header(config.input.table, config.input.sep))
-    if observed:
-        import pandas as pd
-
-        usecols = [config.schema.condition]
-        if config.schema.group_by:
-            usecols.append(config.schema.group_by)
-        frame = pd.read_csv(
-            config.input.table,
-            sep=config.input.sep,
-            usecols=usecols,
-            dtype={name: str for name in usecols},
-        )
-        warnings += config.validate_observed(
-            levels=set(frame[config.schema.condition]),
-            strata=set(frame[config.schema.group_by]) if config.schema.group_by else None,
-        )
     return config, warnings
 
 
@@ -215,6 +199,12 @@ INVALID_CASES: list[tuple[str, dict[str, str | None], str]] = [
         "dose length mismatch",
         {"design.dose": "11.36,19.88,34.8"},
         "index-matched",
+    ),
+    (
+        # The one automatic guard on the direction of the exposure axis.
+        "dose falling while levels rise",
+        {"design.dose": "1000,571.38,326.47,186.54,106.58,60.9,34.8,19.88,11.36"},
+        "does not rise with [design] levels",
     ),
     (
         "dose not numeric",
@@ -372,19 +362,5 @@ INVALID_CASES: list[tuple[str, dict[str, str | None], str]] = [
         "repeated exclusion",
         {"subset.exclude": "counts_RelateLysoCell,counts_RelateLysoCell"},
         "[subset] exclude - repeats: counts_RelateLysoCell",
-    ),
-]
-
-# Cases that need the data, not just the header: (label, overrides, fragment).
-OBSERVED_CASES: list[tuple[str, dict[str, str | None], str]] = [
-    (
-        "level absent from the data",
-        {"design.levels": "10,9,8,7,6,5,4,3,1", "design.exclude_from_fit": "1"},
-        "do not occur in column Concentration: 1",
-    ),
-    (
-        "stratum absent from the data",
-        {"select.strata": "D1,D3"},
-        "do not occur in column Metadata_Day: D3",
     ),
 ]

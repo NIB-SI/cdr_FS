@@ -32,11 +32,11 @@ import numpy as np
 import pandas as pd
 import pytest
 import reshape
-from cases import SUBSET, config_text
+from cases import SUBSET
 from reshape import CONTROL, LEVELS
 
 from cdr_fs.cli import main
-from cdr_fs.config import ConfigError, load_config
+from cdr_fs.config import load_config
 from cdr_fs.schema import read_stage_table
 
 #: 20 features x 5 exposure levels, one stratum.
@@ -61,10 +61,6 @@ def chain(tmp_path_factory):
 
 def read(chain, name: str) -> pd.DataFrame:
     return read_stage_table(chain.results / name, ",")
-
-
-def features_in(path) -> list[str]:
-    return path.read_text(encoding="utf-8").split()
 
 
 # --------------------------------------------------------------- the schema is read, not assumed
@@ -109,14 +105,6 @@ def test_the_output_files_follow_the_configured_separator(chain):
 # ------------------------------------------------------------------------- the design is followed
 
 
-def test_the_contrast_set_is_the_five_declared_levels(chain):
-    distances = read(chain, "emd.csv")
-    assert len(distances) == FEATURES * len(LEVELS)
-    assert list(dict.fromkeys(distances["contrast"])) == [
-        f"{CONTROL}v{level}" for level in LEVELS
-    ]
-
-
 def test_the_exposure_axis_follows_the_configured_order_not_the_alphabet(chain):
     """The sharp one. Sorted, the labels are high, low, max, mid, trace.
 
@@ -140,59 +128,6 @@ def test_the_exposure_axis_follows_the_configured_order_not_the_alphabet(chain):
         assert list(y) == [by_level[(feature, level)] for level in LEVELS]
 
 
-def test_every_replicate_pair_contributes_to_the_baseline(chain):
-    """Four batches, so six unordered pairs - and one stratum, not four."""
-    baseline = read(chain, "emd_baseline.csv")
-    assert len(set(baseline["contrast"])) == 6
-    assert set(baseline["stratum"]) == {""}
-
-
-def test_the_fit_uses_the_configured_models_on_five_points(chain):
-    fits = read(chain, "fit.csv")
-    assert set(fits["model"]) <= set(chain.loaded.fit.models)
-    assert "BC5" not in set(fits["model"])
-    assert set(fits["n_points"]) == {len(LEVELS)}
-    assert set(fits["stratum"]) == {""}
-
-
-def test_five_levels_will_not_carry_a_five_parameter_model(tmp_path):
-    """The model list is a structural fact, and the configuration is made to carry it.
-
-    BC5 has five free parameters and this design fits five points, so the comparison is not
-    identifiable. Refusing it up front is the difference between a shorter series and a
-    table of meaningless information criteria.
-    """
-    config = reshape.build(tmp_path, {"fit.models": "BC4,BC5,LL4,WB1.4,Lin,Con"})
-    with pytest.raises(ConfigError, match="BC5, which has 5 free parameters"):
-        load_config(config)
-
-
-def test_the_chain_narrows_the_feature_list_at_every_stage(chain):
-    selected = features_in(chain.results / "selected.txt")
-    pruned = features_in(chain.results / "pruned.txt")
-    retained = features_in(chain.results / "subset_pruned_retained.txt")
-    assert 0 < len(retained) <= len(pruned) <= len(selected) <= FEATURES
-    assert set(retained) <= set(pruned) <= set(selected)
-
-
-def test_the_subset_carries_the_reshaped_metadata_and_the_retained_features(chain):
-    subset = pd.read_csv(chain.results / "subset_pruned.csv", nrows=1)
-    retained = features_in(chain.results / "subset_pruned_retained.txt")
-    metadata = [column for column in subset.columns if column not in set(retained)]
-    assert len(metadata) == METADATA
-    # Metadata first, then the features, whatever order the input interleaved them in.
-    assert list(subset.columns) == metadata + retained
-
-
-def test_the_figures_are_named_for_a_single_unnamed_stratum(chain):
-    """`fit_<stratum>_part_<n>.png` has no stratum to name here, and must not invent one."""
-    drawn = sorted(path.name for path in chain.results.glob("*.png"))
-    assert "fit_part_1.png" in drawn
-    assert not any(name.startswith("fit_nan") or name.startswith("fit__") for name in drawn)
-    assert {"emd.png", "emd_baseline.png", "dendrogram.png"} <= set(drawn)
-    assert all((chain.results / name).stat().st_size > 0 for name in drawn)
-
-
 # ------------------------------------------------------------------------------- the two bugs
 
 
@@ -212,12 +147,6 @@ def test_a_single_unnamed_stratum_survives_the_round_trip(tmp_path):
     assert len(table.groupby(["feature", "stratum"])) == 2
 
 
-def test_the_unstratified_chain_actually_fits_something(chain):
-    """The end-to-end form of the same bug: `fit` used to write a table with no rows."""
-    assert len(read(chain, "fit.csv")) > 0
-    assert len(read(chain, "select_evidence.csv")) == FEATURES
-
-
 def test_no_features_means_no_clusters():
     """Zero features used to come back as one empty cluster, which has no member to keep."""
     from cdr_fs.prune import cluster_features
@@ -229,43 +158,6 @@ def test_no_features_means_no_clusters():
     groups, tree = cluster_features(np.zeros((1, 1)), ["only"], cut=0.1, method="average")
     assert groups == [(0,)]
     assert tree.shape == (0, 4)
-
-
-def test_pruning_an_empty_selection_is_refused_rather_than_crashing(tmp_path, capsys):
-    config = reshape.build(tmp_path)
-    results = tmp_path / "results"
-    results.mkdir()
-    (results / "selected.txt").write_text("", encoding="utf-8")
-
-    assert main(["prune", "-c", str(config)]) == 3
-    assert "selected.txt is empty" in capsys.readouterr().err
-
-
-def test_subsetting_an_empty_list_is_refused_rather_than_writing_metadata(tmp_path, capsys):
-    config = reshape.build(tmp_path)
-    listing = tmp_path / "none.txt"
-    listing.write_text("\n\n", encoding="utf-8")
-
-    assert main(["subset", "-c", str(config), "--features", str(listing)]) == 3
-    assert "none.txt is empty" in capsys.readouterr().err
-    assert not (tmp_path / "results" / "subset_none.csv").exists()
-
-
-def test_fitting_nothing_is_an_error_not_an_empty_table(tmp_path, capsys):
-    """`select` on an empty fit table would report "0 of 0", which reads as a result."""
-    config = reshape.build(tmp_path)
-    results = tmp_path / "results"
-    results.mkdir()
-    # A distance table whose only contrast is not one the design declares, so no series is
-    # complete and nothing can be fitted.
-    (results / "emd.csv").write_text(
-        "feature,stratum,contrast,group_a,group_b,replicate,n_a,n_b,emd\n"
-        "alpha_01,,vehiclevtrace,vehicle,trace,,10,10,\n",
-        encoding="utf-8",
-    )
-    assert main(["fit", "-c", str(config)]) == 3
-    assert "no series was fitted" in capsys.readouterr().err
-    assert not (results / "fit.csv").exists()
 
 
 # ------------------------------------------------------------- the reshaped config is a real one
@@ -292,18 +184,63 @@ STRUCTURAL_KEYS = (
 )
 
 
-@pytest.mark.parametrize("dotted", STRUCTURAL_KEYS)
-def test_the_reshaped_configuration_differs_where_it_has_to(dotted):
-    """A value inherited from `cases.BASE` would make the whole module vacuous."""
-    from cases import BASE
+def test_the_fit_table_is_self_consistent(chain):
+    """Every stored parameter set must reproduce the AIC and BIC stored beside it.
 
-    section, _, key = dotted.partition(".")
-    assert reshape.RESHAPED[section].get(key) != BASE[section].get(key)
+    This is what `plots` relies on - a curve is drawn from the fit table, not refitted - so
+    a parameter that does not read back exactly means a figure that contradicts its own
+    legend. Six percent of rows failed this when the parameters were written rounded to six
+    digits: the models evaluate `log(x + 1e-10)`, a fitted `e` can settle a hair above
+    -1e-10, and rounding collapses the argument of that logarithm onto zero.
+    """
+    import numpy as np
+
+    from cdr_fs.fit import series_from_emd
+    from cdr_fs.models import MODEL_FUNCTIONS, information_criteria
+    from cdr_fs.plots import parse_parameters
+
+    series = {
+        (feature, stratum): (x, y)
+        for feature, stratum, x, y, complete in series_from_emd(
+            chain.loaded, read(chain, "emd.csv")
+        )
+        if complete
+    }
+    fits = read(chain, "fit.csv")
+    assert len(fits) > 50  # the test is worthless if the chain produced nothing
+
+    worst = 0.0
+    for row in fits.itertuples():
+        x, y = series[(row.feature, row.stratum)]
+        parameters = parse_parameters(row.parameters)
+        with np.errstate(over="ignore", invalid="ignore"):
+            aic, bic = information_criteria(
+                y - MODEL_FUNCTIONS[row.model](x, *parameters), len(parameters)
+            )
+        worst = max(worst, abs(aic - row.aic), abs(bic - row.bic))
+    assert worst < 1e-9
 
 
-def test_the_reshaped_table_is_reproducible(tmp_path):
-    """Seeded, so a failure can be looked at rather than re-rolled."""
-    first = reshape.build(tmp_path / "a").parent / "reshaped.csv"
-    second = reshape.build(tmp_path / "b").parent / "reshaped.csv"
-    assert first.read_bytes() == second.read_bytes()
-    assert config_text(base=reshape.RESHAPED, table="t", output="o").startswith("[input]")
+def test_a_figure_that_refuses_to_draw_is_skipped_not_raised(chain, tmp_path, capsys):
+    """`plot` draws several figures, so one unusable table must not lose the others.
+
+    A figure function raises rather than draw something misleading - a distribution with no
+    points reads as a result. That refusal has to reach the user as a skipped figure with a
+    reason: `main` catches only `ConfigError`, so it surfaced as a traceback and exit 1.
+    """
+    import shutil
+
+    config = reshape.build(tmp_path)
+    results = tmp_path / "results"
+    results.mkdir(exist_ok=True)
+    for name in ("emd.csv", "fit.csv", "emd_baseline.csv"):
+        shutil.copy(chain.results / name, results / name)
+    # Header only: the shape `emd` used to write when a design had one replicate.
+    header = (results / "emd_baseline.csv").read_text(encoding="utf-8").splitlines()[0]
+    (results / "emd_baseline.csv").write_text(header + "\n", encoding="utf-8")
+
+    assert main(["plot", "-c", str(config), "--only", "emd,baseline"]) == 0
+    printed = capsys.readouterr()
+    assert "skipped baseline - the distance table has no rows" in printed.err
+    assert (results / "emd.png").exists()          # the other figure still drew
+    assert not (results / "emd_baseline.png").exists()

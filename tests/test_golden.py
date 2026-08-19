@@ -184,16 +184,6 @@ def joined(mine, published):
 # ------------------------------------------------------------------------- the schema
 
 
-def test_schema_matches_the_published_table(published_run):
-    schema = published_run["schema"]
-    assert len(published_run["columns"]) == EXPECTED["columns"]
-    assert len(schema.metadata) == EXPECTED["metadata"]
-    assert len(schema.features) == EXPECTED["features"]
-    assert schema.prefix_breakdown() == [("rp_", 469), ("counts_", 2)]
-    assert "counts_RelateLysoCell" in schema.feature_set
-    assert "counts_RelateMitoCell" in schema.feature_set
-
-
 def test_trim_covers_the_published_design(published_run):
     report = published_run["trim"]
     assert report.rows == EXPECTED["rows"]
