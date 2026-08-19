@@ -87,10 +87,14 @@ Each stage reads the previous one's output from `[output] dir` under a stable na
 | `plot` | `fit_<stratum>_part_<n>.png` — the fit panels; `emd.png` and `emd_baseline.png` — the distance distributions; `dendrogram.png` — the tree pruning cut |
 | `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and which rule, if any, removed it; `subset_<list>_retained.txt` — the features that survived, one per line |
 
-`cdr-fs run`, which would chain the stages, exists in `--help` and refuses to run. The nine original
-scripts are kept unmodified in [`legacy/`](legacy/README.md) as the reference each rewritten
-module is checked against; that directory disappears when the last of them has been
-reproduced.
+`cdr-fs run`, which would chain the stages, exists in `--help` and refuses to run.
+
+The nine scripts this package was extracted from were carried along in a `legacy/` directory
+while each one was reproduced and checked. All nine now are, so that directory is gone; the
+scripts remain in this repository's history, and in
+[HCS-proc](https://github.com/NIB-SI/HCS-proc)'s `scripts/feature_selection/` as the published
+record. `models.py` was `git mv`'d from the script holding the model functions, so
+`git log --follow` on it reaches the original author's history.
 
 ## Installation
 
