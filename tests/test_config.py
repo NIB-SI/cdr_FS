@@ -107,6 +107,7 @@ def test_defaults_are_the_published_choices(published):
     assert published.prune.threshold == 0.9
     assert published.prune.linkage == "average"
     assert published.prune.representative == "alphabetical"
+    assert published.prune.fill_missing == "column_mean"
     assert published.trim.enabled is True
     assert (published.trim.lower_percentile, published.trim.upper_percentile) == (2.5, 97.5)
 

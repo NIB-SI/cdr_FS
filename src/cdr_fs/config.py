@@ -47,6 +47,7 @@ QUANTIFIERS = ("any", "all")
 BASELINES = ("control_across_replicates", "none")
 LINKAGES = ("average", "complete", "single")
 REPRESENTATIVES = ("alphabetical", "first")
+FILL_MISSING = ("column_mean", "none")
 CONTRASTS_KEYWORD = "control_vs_each"
 
 # Keys absent from this table are rejected, so a typo cannot silently fall back to a
@@ -70,7 +71,9 @@ _ALLOWED: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "select": (frozenset(), frozenset({"slope_positive", "nonconstant", "strata"})),
     "prune": (
         frozenset({"enabled"}),
-        frozenset({"threshold", "linkage", "representative"}),
+        frozenset(
+            {"threshold", "linkage", "representative", "aggregate_by", "fill_missing"}
+        ),
     ),
     "output": (frozenset({"dir"}), frozenset()),
 }
@@ -163,6 +166,10 @@ class PruneSpec:
     threshold: float
     linkage: str
     representative: str
+    #: Columns whose combinations define the unit correlations are computed across. Empty
+    #: correlates the rows as they are.
+    aggregate_by: tuple[str, ...]
+    fill_missing: str
 
 
 @dataclass(frozen=True)
@@ -202,6 +209,9 @@ class Config:
         if self.trim.enabled:
             for column in self.trim.scope:
                 roles.setdefault(column, "[trim] scope")
+        if self.prune.enabled:
+            for column in self.prune.aggregate_by:
+                roles.setdefault(column, "[prune] aggregate_by")
         return roles
 
     # ------------------------------------------------------------- data checks
@@ -454,7 +464,7 @@ def load_config(path: str | Path) -> Config:
     emd_spec = _read_emd(reader, design_spec, schema_spec)
     fit_spec = _read_fit(reader, design_spec)
     select_spec = _read_select(reader, schema_spec, fit_spec)
-    prune_spec = _read_prune(reader)
+    prune_spec = _read_prune(reader, trim_spec)
     output_spec = OutputSpec(dir=Path(reader.text("output", "dir")))
 
     return Config(
@@ -781,10 +791,29 @@ def _read_select(
     )
 
 
-def _read_prune(reader: _Reader) -> PruneSpec:
-    linkage = reader.choice("prune", "linkage", LINKAGES, default="average")
+def _read_prune(reader: _Reader, trim: TrimSpec) -> PruneSpec:
+    enabled = reader.boolean("prune", "enabled")
+    # Absent means "the same unit trimming works within", which is the published run's well.
+    # Present but empty is a deliberate choice to correlate the rows as they are, so the two
+    # cases have to be told apart rather than both read as "no columns".
+    if reader.parser.has_option("prune", "aggregate_by"):
+        aggregate_by = reader.unique(
+            "prune", "aggregate_by", reader.items("prune", "aggregate_by")
+        )
+    else:
+        aggregate_by = trim.scope
+        reader.defaulted.append("prune.aggregate_by")
+        if enabled and not aggregate_by:
+            raise reader.fail(
+                "prune",
+                "aggregate_by",
+                "is required when [prune] enabled is true and [trim] scope is empty: "
+                "correlations are computed between features aggregated within each group of "
+                "these columns. Set it to the columns identifying one experimental unit, or "
+                "set it to nothing to correlate the rows as they are",
+            )
     return PruneSpec(
-        enabled=reader.boolean("prune", "enabled"),
+        enabled=enabled,
         threshold=reader.number(
             "prune",
             "threshold",
@@ -793,8 +822,12 @@ def _read_prune(reader: _Reader) -> PruneSpec:
             maximum=1.0,
             exclude_minimum=True,
         ),
-        linkage=linkage,
+        linkage=reader.choice("prune", "linkage", LINKAGES, default="average"),
         representative=reader.choice(
             "prune", "representative", REPRESENTATIVES, default="alphabetical"
+        ),
+        aggregate_by=aggregate_by,
+        fill_missing=reader.choice(
+            "prune", "fill_missing", FILL_MISSING, default="column_mean"
         ),
     )

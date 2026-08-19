@@ -23,8 +23,6 @@ __all__ = ["main"]
 #: Stages still to be built, and where they land. Kept explicit so `--help` cannot
 #: imply a stage exists before it does.
 PENDING = {
-    "prune": "correlation-based redundancy pruning (phase 5)",
-    "subset": "applying a selected feature list to the data (phase 5)",
     "run": "every stage in sequence (available once the stages are)",
 }
 
@@ -95,6 +93,24 @@ def _build_parser() -> argparse.ArgumentParser:
 
     select = _add(subparsers, "select", "apply the retention rule to the fitted models")
     select.set_defaults(handler=_select)
+
+    prune = _add(
+        subparsers, "prune", "collapse near-redundant features by correlation (optional)"
+    )
+    prune.set_defaults(handler=_prune)
+
+    subset = _add(
+        subparsers, "subset", "write the input table restricted to the retained features"
+    )
+    subset.add_argument(
+        "--features",
+        metavar="FILE",
+        help=(
+            "feature list to apply, one name per line; defaults to the pruned list when "
+            "[prune] is enabled and the selected list otherwise"
+        ),
+    )
+    subset.set_defaults(handler=_subset)
 
     for command, description in PENDING.items():
         pending = _add(subparsers, command, f"{description} [not yet implemented]")
@@ -222,6 +238,13 @@ def _describe(config: Config) -> list[str]:
             _field("threshold", f"|r| >= {config.prune.threshold:g}"),
             _field("linkage", config.prune.linkage),
             _field("representative", config.prune.representative),
+            _field(
+                "aggregate_by",
+                ", ".join(config.prune.aggregate_by)
+                if config.prune.aggregate_by
+                else "(none - the rows are correlated as they are)",
+            ),
+            _field("fill_missing", config.prune.fill_missing),
         ]
     lines += ["[output]", _field("dir", str(config.output.dir))]
     return lines
@@ -368,6 +391,20 @@ def _write(config: Config, table, name: str):
     return target
 
 
+def _list_path(config: Config, name: str) -> Path:
+    """Where a feature list lives. One convention, so the stages can find each other."""
+    return Path(config.output.dir) / f"{name}.txt"
+
+
+def _write_list(config: Config, features: list[str], name: str) -> Path:
+    destination = Path(config.output.dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    target = _list_path(config, name)
+    target.write_text("\n".join(features) + "\n", encoding="utf-8")
+    print(f"wrote {target}  ({len(features)} feature(s))")
+    return target
+
+
 def _read_stage(config: Config, name: str, produced_by: str):
     """Read a previous stage's output, or say which command produces it."""
     import pandas as pd
@@ -436,10 +473,64 @@ def _select(args: argparse.Namespace) -> int:
     print(report.summary())
 
     _write(config, evidence, "select_evidence")
-    destination = Path(config.output.dir)
-    target = destination / "selected.txt"
-    target.write_text("\n".join(retained) + "\n", encoding="utf-8")
-    print(f"wrote {target}  ({len(retained)} feature(s))")
+    _write_list(config, retained, "selected")
+    return 0
+
+
+def _prune(args: argparse.Namespace) -> int:
+    from cdr_fs.prune import prune_features
+    from cdr_fs.subset import read_feature_list
+
+    config = load_config(args.config)
+    if not config.prune.enabled:
+        print(
+            "error: [prune] enabled is false, so there is nothing to do",
+            file=sys.stderr,
+        )
+        return 3
+
+    selected = _list_path(config, "selected")
+    if not selected.exists():
+        raise ConfigError(
+            f"{selected} is missing - run `cdr-fs select -c {config.path}` first"
+        )
+    features = read_feature_list(selected)
+    frame, _ = _prepare(config)
+
+    kept, clusters, tree, report = prune_features(config, frame, features)
+    print(report.summary())
+    _write(config, clusters, "prune_clusters")
+    _write(config, tree, "prune_linkage")
+    _write_list(config, kept, "pruned")
+    return 0
+
+
+def _subset(args: argparse.Namespace) -> int:
+    from cdr_fs.subset import read_feature_list, subset_table
+
+    config = load_config(args.config)
+    if args.features:
+        source = Path(args.features)
+        if not source.is_file():
+            raise ConfigError(f"--features file not found: {source}")
+    else:
+        stage = "pruned" if config.prune.enabled else "selected"
+        source = _list_path(config, stage)
+        if not source.exists():
+            raise ConfigError(
+                f"{source} is missing - run `cdr-fs {'prune' if config.prune.enabled else 'select'}"
+                f" -c {config.path}` first, or name a list with --features"
+            )
+    print(f"applying {source.name}")
+
+    features = read_feature_list(source)
+    frame, resolved = _prepare(config)
+    subset, quality, report = subset_table(frame, resolved.metadata, features)
+    print(report.summary())
+
+    name = f"subset_{source.stem}"
+    _write(config, subset, name)
+    _write(config, quality, f"{name}_features")
     return 0
 
 

@@ -321,6 +321,31 @@ INVALID_CASES: list[tuple[str, dict[str, str | None], str]] = [
     ),
     ("threshold of zero", {"prune.threshold": "0"}, "expected a number in (0, 1]"),
     ("ward linkage", {"prune.linkage": "ward"}, "expected one of: average, complete, single"),
+    (
+        "unknown representative rule",
+        {"prune.representative": "median"},
+        "expected one of: alphabetical, first",
+    ),
+    (
+        "unknown missing-value policy",
+        {"prune.fill_missing": "zero"},
+        "expected one of: column_mean, none",
+    ),
+    (
+        "repeated aggregation column",
+        {"prune.aggregate_by": "Metadata_Well,Metadata_Well"},
+        "[prune] aggregate_by - repeats: Metadata_Well",
+    ),
+    (
+        "no unit to aggregate over",
+        {"trim.enabled": "false", "trim.scope": None},
+        "[prune] aggregate_by - is required",
+    ),
+    (
+        "aggregation column that is a feature",
+        {"prune.aggregate_by": "counts_RelateLysoCell"},
+        "[prune] aggregate_by",
+    ),
 ]
 
 # Cases that need the data, not just the header: (label, overrides, fragment).

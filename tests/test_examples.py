@@ -50,6 +50,9 @@ def test_example_still_carries_the_published_defaults(localised):
     assert config.emd.per_replicate is False
     assert config.design.control == "11"
     assert config.design.fitted_levels == ("10", "9", "8", "7", "6", "5", "4", "3")
+    # Pruning correlates well-level medians, the same unit trimming works within.
+    assert config.prune.aggregate_by == config.trim.scope
+    assert config.prune.fill_missing == "column_mean"
 
 
 def test_example_declares_no_real_paths():
