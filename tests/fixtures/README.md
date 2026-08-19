@@ -64,25 +64,38 @@ head -1 all_days_trimmed_features.txt | tr '\t' '\n' | grep -vxE \
 the far end of the pipeline. A `^counts_` metadata pattern would have classified it as
 metadata, and a feature the published run retained could never have reached selection.
 
-Both lists predate the BC4 correction, so they pair with `data/model_fit_results.txt` rather
-than with a fit produced by the current pipeline. `tests/test_golden_selection.py` uses them,
-and skips when that fit table is absent.
+The all-days list is also the *input* to correlation pruning, which is how
+`tests/test_golden_prune.py` can check that stage on its own.
 
 ## `published_model_fit_results_pre_bc4_fix.txt` (1.1 MB)
 
 The fit table the published run produced: 10,725 rows of AIC, BIC and linear slope per
-feature, day and model, over the same 1,880 series and 471 features. The largest committed
-fixture, and worth its size - it is what lets the retention rule be checked against the
-published outcome with no data and no tolerance.
+feature, day and model, over 1,880 series and 471 features. The largest committed fixture, and
+worth its size - it is what lets the retention rule be checked against the published outcome
+with no data and no tolerance. `tests/test_golden_selection.py` reads it and reproduces both
+published lists exactly.
 
-**It predates the BC4 correction**, hence the filename. At the time BC4 was implemented as
-`c + (d-c)/(1+exp(...))`, algebraically the four-parameter log-logistic, so its AIC is
-bit-identical to LL4's in all 1,760 series where both converged - verified, and asserted by
-`test_the_fixture_is_the_pre_correction_fit`. That is what makes it the article's fit rather
-than the current pipeline's, and therefore what makes 182 reproducible from it. A fit table
-from today's `cdr_FS` gives 199 instead.
+The filename records which run it is from. Its `BC4` rows come from before the model was
+corrected, when it was implemented as `c + (d-c)/(1+exp(...))` - algebraically the
+four-parameter log-logistic, so its AIC is bit-identical to `LL4`'s in all 1,760 series where
+both converged. `test_the_fixture_is_the_pre_correction_fit` asserts exactly that, which is
+what pins the fixture to the article's run rather than to any later one.
 
 Two facts fall out of the numbers themselves. `BIC - AIC = 0.3178` for the four-parameter
 models, and `k*log(n) - 2k` equals that only at `n = 8`, so the published run fitted **eight**
 points - the top exposure was already withheld. And 11,280 possible (series, model) pairs
 minus 10,725 rows leaves 555 fits that did not converge, against 541 for `cdr_FS`.
+
+## `hcs_proc_feature_categories.tsv` (34 KB) and `published_categories_all_days.tsv`
+
+What `tests/test_golden_prune.py` checks the pruned list's *composition* against, rather than
+only its length.
+
+The first is `scripts/categorization/feature_categories.tsv` from
+[HCS-proc](https://github.com/NIB-SI/HCS-proc) (MIT), copied unchanged: one row per feature
+giving its measurement category and the organelle it describes. The second is the published
+result of applying that lookup to the pruned feature list, a 4 x 7 table of counts transcribed
+from the bar labels of HCS-proc's `files/feature_categories_barplot.png`. Every segment of that
+figure is labelled, so the figure is a complete table rather than a picture to eyeball, and it
+is generated from this stage's output - after pruning, before the missing-data filter the
+dimension-reduction step applies. Its 24 filled cells sum to 99.

@@ -24,10 +24,10 @@ is substantially a descendant of one script, the migration uses `git mv` so that
 | `emd_scores_concs_per_day.py` | `emd.py` | rewritten contrast-driven engine |
 | `emd_scores_controls_trimming_well_results.py` | `emd.py` | merged — it is the `baseline` contrast set, not a separate stage |
 | `select_features.py` | `select.py` | rewritten, quantifiers made explicit and config-driven |
-| `correlation_feature_selection_well_batch.py` | `prune.py` | rewritten as an optional module; maths kept (`1-|r|`, average linkage at 0.1) |
-| `parsing_clusters.py` | `prune.py` | **must not survive as-is** — it `eval()`s a line read from a file |
-| `trimming_value_include_batch_v1_cid.py` | `subset.py` | folded into one step |
-| `trimming_value_include_batch_v2_cid.py` | `subset.py` | folded into one step — near-identical to v1 |
+| `correlation_feature_selection_well_batch.py` | `prune.py` + `plots.py` | clustering done — maths kept (`1-|r|`, average linkage at 0.1), and the tree it cuts is now the tree that gets drawn. Its dendrogram half is still the reference for `plots.py` |
+| `parsing_clusters.py` | `prune.py` | done — clusters are a TSV column now, so nothing `eval()`s a line read from a file |
+| `trimming_value_include_batch_v1_cid.py` | `subset.py` | done — folded into one step |
+| `trimming_value_include_batch_v2_cid.py` | `subset.py` | done — folded into one step, it was near-identical to v1 |
 | `plot_emd_controls.py` | `plots.py` | folded in |
 
 The trimming loop these scripts share is also the ancestor of `trim.py`, together with

@@ -4,11 +4,9 @@ Selects morphological features in high-content screening by fitting
 concentration/dose–response models to earth mover's distance scores between control and
 treated cell populations.
 
-> **Status: under construction.** Everything up to and including the retention rule is in
-> place; the diagnostic plots, the correlation pruning and the subsetting step are not. See
-> [Status](#status) for what runs today. Both stages that have a published output to check
-> against reproduce it exactly: the EMD tables, and - given the published fit table - the
-> selected feature lists. See [Which run is "published"?](#which-run-is-published).
+> **Status: under construction.** Every stage runs except the diagnostic plots. See
+> [Status](#status) for what works today and [Reproducing the published
+> run](#reproducing-the-published-run) for which published numbers come back.
 
 ## The method
 
@@ -55,9 +53,9 @@ prose uses the en dash; the package itself is plain lowercase `cdr_fs`.
 | The six models, AIC/BIC | `models.py` | done (lifted verbatim) |
 | Fitting to a results table | `fit.py` | done |
 | Retention rule | `select.py` | done |
+| Correlation pruning (optional) | `prune.py` | done |
+| Applying a selected list to the data | `subset.py` | done |
 | Diagnostic plots | `plots.py` | not started |
-| Correlation pruning (optional) | `prune.py` | not started |
-| Applying a selected list to the data | `subset.py` | not started |
 
 Working today:
 
@@ -68,6 +66,8 @@ cdr-fs trim  -c config.ini          # write the trimmed table  (--dry-run to jus
 cdr-fs emd   -c config.ini          # distances per feature, stratum and contrast
 cdr-fs fit   -c config.ini          # fit the six models to each distance series
 cdr-fs select -c config.ini         # apply the retention rule
+cdr-fs prune -c config.ini          # collapse near-redundant features   (optional)
+cdr-fs subset -c config.ini         # write the table restricted to what survived
 ```
 
 Every stage that needs cell-level data reads `[input] table` and applies the configured
@@ -76,15 +76,19 @@ dataset that copy would be another 3.7 GB. `cdr-fs trim` exists to write it out 
 inspection, not because later stages need it.
 
 Each stage reads the previous one's output from `[output] dir` under a stable name:
-`cdr-fs emd` writes `emd.tsv` (control against each level) and `emd_baseline.tsv` (control
-against control, between replicates); `cdr-fs fit` writes `fit.tsv`; `cdr-fs select` writes
-`selected.txt` and `select_evidence.tsv`, the latter recording per feature and stratum which
-model won, by how much, and what the linear slope was.
 
-Every other subcommand exists in `--help` and refuses to run, naming the stage that is
-missing. The nine original scripts are kept unmodified in [`legacy/`](legacy/README.md) as
-the reference each rewritten module is checked against; that directory disappears when the
-last of them has been reproduced.
+| Stage | Writes |
+|---|---|
+| `emd` | `emd.tsv` — control against each level; `emd_baseline.tsv` — control against control, between replicates |
+| `fit` | `fit.tsv` |
+| `select` | `selected.txt`; `select_evidence.tsv` — per feature and stratum, which model won, by how much, and what the linear slope was |
+| `prune` | `pruned.txt`; `prune_clusters.tsv` — every feature with its cluster and how far it sits from the representative; `prune_linkage.tsv` — the tree and its leaf order, so the dendrogram can be drawn without recomputing a correlation |
+| `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column actually holds |
+
+`cdr-fs run` exists in `--help` and refuses to run, naming what is missing. The nine original
+scripts are kept unmodified in [`legacy/`](legacy/README.md) as the reference each rewritten
+module is checked against; that directory disappears when the last of them has been
+reproduced.
 
 ## Installation
 
@@ -92,8 +96,8 @@ last of them has been reproduced.
 pip install -e .
 ```
 
-Python 3.10 or newer. Requires numpy, pandas, scipy, matplotlib and scikit-learn; `pip
-install -e ".[dev]"` adds pytest.
+Python 3.10 or newer. Requires numpy, pandas, scipy and matplotlib; `pip install -e ".[dev]"`
+adds pytest.
 
 ## Configuration
 
@@ -136,7 +140,9 @@ rejected for the same reason.
 | `prune` | `enabled` | *required* | |
 | | `threshold` | `0.9` | on \|r\|; features are clustered by `1 - |r|` |
 | | `linkage` | `average` | `average`, `complete` or `single` |
-| | `representative` | `alphabetical` | which member of a cluster to keep |
+| | `representative` | `alphabetical` | which member of a cluster to keep — `alphabetical` or `first` |
+| | `aggregate_by` | *(`[trim] scope`)* | columns identifying one experimental unit; correlations are computed between unit medians. Explicitly empty correlates the object rows as they are |
+| | `fill_missing` | `column_mean` | `column_mean` or `none` — see [Collapsing redundant features](#collapsing-redundant-features) |
 | `output` | `dir` | *required* | where results are written |
 
 Three things this configuration makes explicit that were previously implicit in the
@@ -233,52 +239,69 @@ a five-parameter model fitted to eight points is at the edge of what AIC/BIC com
 supports. It also changes the numbers, so it no longer reproduces the article. Both are
 available; the default reproduces the paper.
 
-## Which run is "published"?
+## Collapsing redundant features
 
-There are two, and they differ, which matters because "the defaults reproduce the published
-run" is the invariant this extraction rests on.
+`cdr-fs prune` aggregates the objects to one median profile per experimental unit -
+`[prune] aggregate_by`, one well of one replicate on one day in the published run - correlates
+the features across those units, and clusters them on `1 - |r|` so that a strong *negative*
+correlation counts as the redundancy it is. Average linkage, cut at `1 - [prune] threshold`.
+One member of each cluster survives.
 
-* **The article's run** - archived as HCS-proc release
-  [`v1`](https://doi.org/10.5281/zenodo.17949848). It reports **182** retained features.
-* **The corrected pipeline** - HCS-proc `main`, which after publication replaced the BC4
-  model. It had been implemented as `c + (d-c)/(1+exp(...))`, algebraically the
-  four-parameter log-logistic - a duplicate of LL4, so the six-model comparison was really
-  five distinct models. It is now the true Brain-Cousens form, whose `f * x` term is what
-  makes it a hormesis model.
+Two things about it are worth knowing before trusting the output.
 
-`examples/published.ini` follows **the corrected pipeline**, because that is what the
-inherited scripts do, and it retains **199** features. Every part of that difference is
-accounted for:
+**Missing values are filled by default, and it is not a small effect.** Trimming leaves gaps,
+so `fill_missing = column_mean` substitutes the feature's overall mean for each missing object
+value before aggregating - which is what the published run did. For a feature with many
+trimmed values that pulls its unit medians toward the global mean and shrinks the spread the
+correlation sees. On the reference dataset the choice moves the cluster count by eight, from
+99 to 107. `none` medians whatever values are actually present.
 
-| fit table fed to the retention rule | retained |
-|---|---|
-| the published `model_fit_results.txt`, unaltered | **182 - the published set, exactly** |
-| the same, but with BC4 recomputed in its corrected form | 198 |
-| `cdr_FS`'s own fit table | 199 |
-| `cdr_FS`'s own, but with BC4 taken from the published run | 183 |
-| `cdr_FS`'s own, with all four sigmoids from the published run | **182 - the published set, exactly** |
+**Average linkage cuts on cluster means, so a member can sit further from its representative
+than the threshold suggests.** On the reference dataset the 83 dropped features sit a median
+0.052 from the feature that stands for them — `|r|` = 0.95, as advertised — but the loosest
+sits at 0.215, which is `|r|` = 0.785. That is what chaining does, and it is why
+`prune_clusters.tsv` records the distance for every member rather than only the cluster
+number: it is the column to look at before trusting one feature to speak for a group.
 
-So the BC4 correction accounts for sixteen of the seventeen extra features, and the
-seventeenth is iterative-fit drift: `BC5`, `LL4` and `WB1.4` are fitted from the same starting
-values with the same evaluation budget, but a different scipy version stops somewhere slightly
-different on a flat surface. One feature in 471.
+## Reproducing the published run
 
-The models with a closed-form least squares - `Lin` and `Con`, which are also the two the
-retention rule consults - agree with the published fit table to **1e-12**. That is the check
-that matters, because it covers everything upstream of it: the trim, the distances, the
-eight-point series and the information criteria.
+`examples/published.ini` is the configuration of the run described in the article. Three
+stages have a published output to check against, and all three return it:
 
-`tests/test_golden_selection.py` asserts the exact 182 and 374 feature sets. It needs only the
-1 MB published fit table and runs in a second.
+| Stage | Published output | Result |
+|---|---|---|
+| `emd` | the two EMD tables — 16,946 treatment and 11,292 baseline distances | every one of the 28,238 population sizes exact, distances within 8.5e-13 relative |
+| `select` | the two retained feature lists — **182** across all days, **374** on D5 alone | both reproduced as identical sets |
+| `prune` | the all-days list after pruning — **99** features | reproduced, and its composition matches the published categorization across all 4 organelles x 7 measurement families |
+
+The selection gate runs off the published fit table, so it isolates the retention rule from
+the curve fitting; `tests/test_golden_selection.py` needs only a 1 MB committed fixture and
+runs in a second. The other two need the large inputs and are opt-in — see [Tests](#tests).
+
+Two notes on what those numbers are and are not.
+
+**The pruning check is on composition, not just on the count.** A single wrong merge would
+still give a plausible number, so the assertion is against the published feature
+categorization, every cell of which is labelled in
+[HCS-proc's figure](https://github.com/NIB-SI/HCS-proc). Reproducing the count *and* the
+composition takes the same 99 features.
+
+**The article's final list is shorter than 99, and the difference is not this tool's.** The
+published pipeline went on to drop features with 30% or more missing values, along with two
+excluded by hand, when it built the subsets for its dimension-reduction analyses — per
+day-subset, downstream of feature selection. That filter belongs to the analysis that consumes
+the selection rather than to the selection itself, so `cdr-fs subset` applies none: it writes
+the per-feature counts the decision needs and leaves the threshold to whoever is choosing it.
 
 ### An aside that is really a check
 
 The published run produced two selections, one per gate: across all days, and on D5 alone.
 Neither list contains the other - `counts_RelateLysoCell` is retained across all days but not
-on D5, and `counts_RelateMitoCell` the reverse. Only the hybrid rule can do that. A positive
-slope is required on **any** stratum, so the all-days gate has four chances where D5 has one;
-if both tests used `all`, the D5 set would necessarily contain the all-days set. The asymmetry
-is therefore visible in the published output itself, not merely in a reading of the code.
+on D5, and `counts_RelateMitoCell` the reverse. Only the hybrid retention rule can do that. A
+positive slope is required on **any** stratum, so the all-days gate has four chances where D5
+has one; if both tests used `all`, the D5 set would necessarily contain the all-days set. The
+asymmetry is therefore visible in the published output itself, not merely in a reading of the
+code.
 
 ## Scope
 
@@ -320,7 +343,8 @@ The reference dataset is 121 GB in total and lives on Zenodo:
 from is `cell_ID_pooled_median_row_plate_standardization_cid.txt`, 3.7 GB — the untrimmed,
 row/plate standardized per-cell table, 503,920 cells x 481 columns. It is deliberately
 *untrimmed*: trimming lives in this tool, so a run reproduces that step rather than
-inheriting it.
+inheriting it. One more file from the same record, `all_days_trimmed_features.txt` (1.4 GB),
+is the published run's own intermediate and is what the pruning gate checks against.
 
 Nothing that large belongs in git. Put it in `data/`, which is ignored; the committed
 fixtures under [`tests/fixtures/`](tests/fixtures/README.md) are small subsets that let the
@@ -336,22 +360,28 @@ The suite needs no large data. `tests/fixtures/columns_published.txt` carries th
 column names, so the metadata/feature arithmetic is asserted against the published schema
 in CI; trimming is checked against the original per-group `np.nanpercentile` loop as its
 oracle, on data with and without infinities; the EMD engine is exercised on designs that
-deliberately are *not* the RTgill-W1 one; and `tests/cases.py` holds the table of
-misconfigurations that must be rejected, one entry per validation rule.
+deliberately are *not* the RTgill-W1 one; the retention rule and the pruning are checked on
+hand-built cases where the right answer is known by construction; and `tests/cases.py` holds
+the table of misconfigurations that must be rejected, one entry per validation rule.
 
-The golden regression compares against the published run itself, so it needs the 3.7 GB
-input and the two published EMD tables in `data/`. It skips when they are absent, and
-skips when they are present unless you opt in, because it takes minutes:
+Two golden regressions compare against the published run itself, so they need the large inputs
+in `data/`. Each skips when its input is absent, and skips when it is present unless you opt
+in, because reading gigabytes takes minutes:
 
 ```bash
-CDR_FS_GOLDEN=1 pytest tests/test_golden.py -v
+CDR_FS_GOLDEN=1 pytest tests/test_golden.py tests/test_golden_prune.py -v
 ```
 
-It reproduces the published EMD tables from the untrimmed input: 16,946 treatment
-distances and 11,292 baseline distances, every population size matching exactly and every
-distance within 1e-9 relative. Population sizes are the sharper comparison — they are
-integers, so no tolerance can hide a difference, and their matching is what shows the trim
-step was reproduced value for value.
+`test_golden.py` reproduces the published EMD tables from the untrimmed 3.7 GB input: 16,946
+treatment distances and 11,292 baseline distances, every population size matching exactly and
+every distance within 1e-9 relative. Population sizes are the sharper comparison — they are
+integers, so no tolerance can hide a difference, and their matching is what shows the trim step
+was reproduced value for value.
+
+`test_golden_prune.py` starts instead from the published run's own selected-and-trimmed subset,
+`all_days_trimmed_features.txt`, which isolates the pruning stage: its 182 feature columns are
+the published selection and its values are already trimmed, so anything that fails there is
+pruning and nothing else.
 
 ## Licence and citation
 
