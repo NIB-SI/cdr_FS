@@ -20,12 +20,6 @@ from cdr_fs.config import Config, ConfigError, load_config
 
 __all__ = ["main"]
 
-#: Stages still to be built, and where they land. Kept explicit so `--help` cannot
-#: imply a stage exists before it does.
-PENDING = {
-    "run": "every stage in sequence (available once the stages are)",
-}
-
 _EXTENSIONS = {"tab": ".tsv", "comma": ".csv", "semicolon": ".csv"}
 
 #: `cdr-fs plot --only` names, and what each figure needs to exist.
@@ -142,10 +136,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     plot.set_defaults(handler=_plot)
 
-    for command, description in PENDING.items():
-        pending = _add(subparsers, command, f"{description} [not yet implemented]")
-        pending.set_defaults(handler=_pending, command_name=command)
-
     return parser
 
 
@@ -159,15 +149,6 @@ def _add(subparsers, name: str, help_text: str) -> argparse.ArgumentParser:
         help="configuration file (.ini)",
     )
     return parser
-
-
-def _pending(args: argparse.Namespace) -> int:
-    print(
-        f"error: `cdr-fs {args.command_name}` is not implemented yet - "
-        f"{PENDING[args.command_name]}",
-        file=sys.stderr,
-    )
-    return 3
 
 
 # ------------------------------------------------------------------------ reporting
@@ -366,8 +347,9 @@ def _scan(config: Config) -> list[str]:
     import pandas as pd
 
     usecols = [config.schema.condition]
-    if config.schema.group_by:
-        usecols.append(config.schema.group_by)
+    for column in (config.schema.group_by, config.schema.pool_over):
+        if column and column not in usecols:
+            usecols.append(column)
     frame = pd.read_csv(
         config.input.table,
         sep=config.input.sep,
@@ -378,12 +360,17 @@ def _scan(config: Config) -> list[str]:
     strata = (
         set(frame[config.schema.group_by].str.strip()) if config.schema.group_by else None
     )
+    replicates = (
+        set(frame[config.schema.pool_over].str.strip()) if config.schema.pool_over else None
+    )
     print()
     print(f"[data]  {len(frame):,} row(s)")
     print(_field(config.schema.condition, _abbreviate(sorted(levels), limit=12)))
     if strata is not None:
         print(_field(config.schema.group_by, _abbreviate(sorted(strata), limit=12)))
-    return config.validate_observed(levels=levels, strata=strata)
+    if replicates is not None:
+        print(_field(config.schema.pool_over, _abbreviate(sorted(replicates), limit=12)))
+    return config.validate_observed(levels=levels, strata=strata, replicates=replicates)
 
 
 def _prepare(config: Config, *, trim: bool = True):
@@ -413,6 +400,7 @@ def _prepare(config: Config, *, trim: bool = True):
     for warning in config.validate_observed(
         levels=set(frame[config.schema.condition]),
         strata=set(frame[config.schema.group_by]) if config.schema.group_by else None,
+        replicates=set(frame[config.schema.pool_over]) if config.schema.pool_over else None,
     ):
         print(f"warning: {warning}", file=sys.stderr)
 
@@ -641,18 +629,27 @@ def _plot(args: argparse.Namespace) -> int:
     skipped: list[str] = []
     read = lambda target: read_stage_table(target, config.input.sep)  # noqa: E731
 
+    # A figure function refuses rather than draw something misleading - an empty
+    # distribution, a truncated tree. That refusal is a ValueError, and it must reach the
+    # user as a skipped figure with a reason, not as a traceback: `plot` draws several
+    # figures and one bad table should not lose the others.
+    def draw(name: str, call):
+        try:
+            drawn.extend(call())
+        except ValueError as refusal:
+            skipped.append(f"{name} - {refusal}")
+
     if "fits" in wanted:
         distances, fits = available("emd"), available("fit")
         if distances and fits:
-            pages = plot_fit_panels(
+            draw("fits", lambda: plot_fit_panels(
                 config,
                 read(distances),
                 read(fits),
                 results,
                 grid=args.grid,
                 features=features,
-            )
-            drawn.extend(pages)
+            ))
         else:
             skipped.append("fits - needs emd and fit (run `cdr-fs fit`)")
 
@@ -664,21 +661,23 @@ def _plot(args: argparse.Namespace) -> int:
             continue
         target = available(source)
         if target:
-            drawn.append(plot_distribution(read(target), results / f"{source}.png", title=title))
+            draw(name, lambda target=target, source=source, title=title: [
+                plot_distribution(read(target), results / f"{source}.png", title=title)
+            ])
         else:
             skipped.append(f"{name} - needs {source}{extension} (run `cdr-fs emd`)")
 
     if "dendrogram" in wanted:
         tree, clusters = available("prune_linkage"), available("prune_clusters")
         if tree:
-            drawn.append(
+            draw("dendrogram", lambda: [
                 plot_dendrogram(
                     pd.read_csv(tree, sep=config.input.sep),
                     results / "dendrogram.png",
                     cut=1.0 - config.prune.threshold,
                     clusters=read(clusters) if clusters else None,
                 )
-            )
+            ])
         else:
             skipped.append("dendrogram - needs prune_linkage (run `cdr-fs prune`)")
 

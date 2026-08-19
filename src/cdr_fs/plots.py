@@ -103,18 +103,23 @@ def _panel(
     fits: pd.DataFrame,
     axis: Sequence[float],
     labels: Sequence[str],
+    score: str = "aic_plus_bic",
 ) -> None:
-    """One feature on one stratum: the distance points, the fitted curves, the legend."""
+    """One feature on one stratum: the distance points, the fitted curves, the legend.
+
+    `score` is the column the legend is ordered by, which is `[fit] rank_by`'s column so
+    that the panel lists the models in the order the retention rule compared them.
+    """
     import numpy as np
 
     from cdr_fs.models import MODEL_FUNCTIONS, MODEL_PARAMETER_NAMES
 
     axes.plot(x, y, "o", markersize=10)
 
-    # Best first, by whatever the fit table's ranking column says - the same order the
-    # retention rule reads them in.
+    # Best first by the configured ranking column, so the order a reader sees is the order
+    # the retention rule read them in.
     entries = []
-    for row in fits.sort_values("aic_plus_bic").itertuples():
+    for row in fits.sort_values(score).itertuples():
         function = MODEL_FUNCTIONS.get(row.model)
         parameters = parse_parameters(row.parameters)
         if function is None or len(parameters) != len(MODEL_PARAMETER_NAMES[row.model]):
@@ -182,6 +187,7 @@ def plot_fit_panels(
     from matplotlib.figure import Figure
 
     from cdr_fs.fit import axis_positions, series_from_emd
+    from cdr_fs.select import SCORE_COLUMNS
 
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
@@ -203,6 +209,7 @@ def plot_fit_panels(
         f"{config.design.control}v{level}" for level in config.design.fitted_levels
     ]
     indexed = fit_table.set_index(["feature", "stratum"]).sort_index()
+    score = SCORE_COLUMNS[config.fit.rank_by]
 
     # Collected per stratum first, so the pages of one stratum are consecutive and complete.
     by_stratum: dict[str, list[tuple]] = {}
@@ -223,7 +230,7 @@ def plot_fit_panels(
                     fits = indexed.loc[[(feature, stratum)]].reset_index()
                 except KeyError:
                     fits = fit_table.iloc[0:0]
-                _panel(axes, feature, stratum, x, y, fits, axis, labels)
+                _panel(axes, feature, stratum, x, y, fits, axis, labels, score)
             # Leave the unused cells of a partly filled page empty rather than framed.
             for offset in range(len(panels[start : start + per_page]), per_page):
                 axes_grid[offset // grid][offset % grid].set_axis_off()

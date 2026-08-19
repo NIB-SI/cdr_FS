@@ -299,6 +299,7 @@ class Config:
         self,
         levels: set[str] | None = None,
         strata: set[str] | None = None,
+        replicates: set[str] | None = None,
     ) -> list[str]:
         """Check the declared design against the values the data actually contains.
 
@@ -328,6 +329,23 @@ class Config:
                     f"column {self.schema.group_by}: {', '.join(missing)}\n"
                     f"  values present: {', '.join(sorted(strata))}"
                 )
+        # The baseline set is every pair of replicates, so a single replicate yields no
+        # pairs at all. Caught here rather than left to the file: an empty baseline table
+        # is not a reproducibility floor, and this is only decidable once the column has
+        # been read, which is why `[emd] baseline` cannot check it on its own.
+        if (
+            replicates is not None
+            and self.emd.baseline == "control_across_replicates"
+            and len(replicates) < 2
+        ):
+            held = f"only {sorted(replicates)[0]!r}" if replicates else "no values"
+            raise ConfigError(
+                f"{self.path}: [emd] baseline is 'control_across_replicates', which "
+                f"compares replicates with each other, but column "
+                f"{self.schema.pool_over} holds {held}\n"
+                f"  a reproducibility floor needs at least two replicates; set [emd] "
+                f"baseline = none if this experiment has none"
+            )
         return warnings
 
 
@@ -611,6 +629,26 @@ def _read_design(reader: _Reader) -> DesignSpec:
                 raise reader.fail(
                     "design", "dose", f"{entry!r} is not a number"
                 ) from None
+        # `levels` is declared low to high, so an index-matched dose vector has to rise
+        # with it. When it does not, one of the two lists is in the wrong order - and a
+        # reversed `levels` is otherwise undetectable: it produces a full, plausible run
+        # in which every linear slope has the wrong sign and the retention rule inverts.
+        # This is the only automatic guard against that, and it is why supplying `dose` is
+        # worth doing even when the fit is on `rank`.
+        falling = [
+            f"{levels[index]}={values[index]:g} then {levels[index + 1]}={values[index + 1]:g}"
+            for index in range(len(values) - 1)
+            if values[index + 1] <= values[index]
+        ]
+        if falling:
+            raise reader.fail(
+                "design",
+                "dose",
+                f"does not rise with [design] levels, which are declared low to high: "
+                f"{'; '.join(falling[:3])}\n"
+                f"  either the doses or the levels are in the wrong order; a reversed "
+                f"levels list runs to completion and silently inverts the retention rule",
+            )
         dose = tuple(values)
 
     excluded = frozenset(reader.items("design", "exclude_from_fit", default=""))
