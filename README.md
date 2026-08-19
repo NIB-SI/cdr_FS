@@ -87,6 +87,16 @@ Each stage reads the previous one's output from `[output] dir` under a stable na
 | `plot` | `fit_<stratum>_part_<n>.png` — the fit panels; `emd.png` and `emd_baseline.png` — the distance distributions; `dendrogram.png` — the tree pruning cut |
 | `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and which rule, if any, removed it; `subset_<list>_retained.txt` — the features that survived, one per line |
 
+A stage refuses rather than write an artefact that reads as a result: `fit` will not write a
+table when no series was complete, and `prune` and `subset` will not run on an empty feature
+list. Each exits 3 and says which stage produced the empty input.
+
+The file names above use `.tsv`; with `[input] sep = comma` they are `.csv`, since the stage
+tables are written with the same separator the input uses. Read them back with
+`cdr_fs.schema.read_stage_table` rather than with a bare `pandas.read_csv`: an experiment
+with no `[schema] group_by` has one stratum whose label is the empty string, and pandas reads
+an empty field as `NaN` — which `groupby` then drops, taking the whole table with it.
+
 `cdr-fs run`, which would chain the stages, exists in `--help` and refuses to run.
 
 The nine scripts this package was extracted from were carried along in a `legacy/` directory
@@ -423,9 +433,11 @@ design.
 
 The design is experiment-agnostic by construction — nothing about days, replicates, wells
 or nine concentrations is hardcoded — but it has so far been exercised on **one**
-experimental design. Structural generality is tested by re-shaping that dataset (dropping
-the time axis, changing the number of levels, renaming columns); a second real dataset has
-not been run.
+experimental design. Structural generality is tested synthetically instead, by re-shaping
+that dataset into a different experiment and running the whole chain on it from
+configuration alone; see [Structural generality](#structural-generality). A second *real*
+dataset has not been run, and nothing here is evidence about a second organism, assay or
+chemistry.
 
 ## Data
 
@@ -452,8 +464,35 @@ column names, so the metadata/feature arithmetic is asserted against the publish
 in CI; trimming is checked against the original per-group `np.nanpercentile` loop as its
 oracle, on data with and without infinities; the EMD engine is exercised on designs that
 deliberately are *not* the RTgill-W1 one; the retention rule and the pruning are checked on
-hand-built cases where the right answer is known by construction; and `tests/cases.py` holds
-the table of misconfigurations that must be rejected, one entry per validation rule.
+hand-built cases where the right answer is known by construction; `tests/test_generality.py`
+runs the whole chain on a re-shaped experiment (below); and `tests/cases.py` holds the table
+of misconfigurations that must be rejected, one entry per validation rule.
+
+### Structural generality
+
+Every other test is shaped by the RTgill-W1 design, which leaves the package's central claim
+untested: that the experiment comes from the configuration and from nowhere else.
+`tests/reshape.py` therefore rebuilds the committed slice of the published table as a
+different experiment, keeping the measured values and changing every structural choice at
+once:
+
+| | published | re-shaped |
+|---|---|---|
+| stratification | four days | **none** — one unnamed stratum |
+| exposure levels | 9 (top one withheld) | **5**, all fitted |
+| level labels | `11` control, `10 … 2` | `vehicle` control, `trace, low, mid, high, max` — which sort into a *different* order |
+| models | all six | five: 5 points cannot identify BC5's 5 parameters, so the configuration has to say so |
+| columns | `Metadata_*`, `Concentration`, `rp_norm_*` | no name in common, features included |
+| file | tab-separated, metadata first | comma-separated, columns interleaved, rows shuffled |
+| trim | `[p2.5, p97.5]` within day, replicate, well | `[p5, p95]` within batch, sample |
+
+`tests/test_generality.py` runs `check`, `emd`, `fit`, `select`, `prune`, `subset` and `plot`
+over it and asserts the answers are the configured ones — that the fitted axis follows
+`[design] levels` rather than the labels' sort order, that the outputs take the configured
+separator, and that a single unnamed stratum survives every table on disk.
+
+This is one dataset in two shapes. It is evidence that the code is configuration-driven, and
+it is not evidence of biological generality.
 
 Two golden regressions compare against the published run itself, so they need the large inputs
 in `data/`. Each skips when its input is absent, and skips when it is present unless you opt

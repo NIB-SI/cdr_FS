@@ -65,13 +65,17 @@ def config_text(
     *,
     table: Path | str = SUBSET,
     output: Path | str = "results",
+    base: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Render a configuration, applying dotted-key `overrides`.
 
     An override value of `None` removes the key, or the whole section when the key is a
     bare section name. `"section.key": "value"` adds or replaces.
+
+    `base` names the starting configuration; the default describes the published design,
+    and `reshape.RESHAPED` describes the structurally different one.
     """
-    sections = {name: dict(keys) for name, keys in BASE.items()}
+    sections = {name: dict(keys) for name, keys in (base or BASE).items()}
     sections["input"]["table"] = str(table)
     sections["output"]["dir"] = str(output)
 
@@ -107,10 +111,11 @@ def write_config(
     *,
     name: str = "config.ini",
     table: Path | str = SUBSET,
+    base: dict[str, dict[str, str]] | None = None,
 ) -> Path:
     path = Path(directory) / name
     path.write_text(
-        config_text(overrides, table=table, output=Path(directory) / "results"),
+        config_text(overrides, table=table, output=Path(directory) / "results", base=base),
         encoding="utf-8",
     )
     return path
