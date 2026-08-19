@@ -25,10 +25,10 @@ available; the default reproduces the paper.
 
 ## Collapsing redundant features
 
-`cdr-fs prune` aggregates the objects to one median profile per experimental unit -
-`[prune] aggregate_by`, one well of one replicate on one day in the published run - correlates
+`cdr-fs correlation` aggregates the objects to one median profile per experimental unit -
+`[correlation] aggregate_by`, one well of one replicate on one day in the published run - correlates
 the features across those units, and clusters them on `1 - |r|` so that a strong *negative*
-correlation counts as the redundancy it is. Average linkage, cut at `1 - [prune] threshold`.
+correlation counts as the redundancy it is. Average linkage, cut at `1 - [correlation] threshold`.
 One member of each cluster survives.
 
 Two things about it are worth knowing before trusting the output.
@@ -44,15 +44,15 @@ correlation sees. On the reference dataset the choice moves the cluster count by
 than the threshold suggests.** On the reference dataset the 83 dropped features sit a median
 0.052 from the feature that stands for them — `|r|` = 0.95, as advertised — but the loosest
 sits at 0.215, which is `|r|` = 0.785. That is what chaining does, and it is why
-`prune_clusters.tsv` records the distance for every member rather than only the cluster
+`correlation_clusters.tsv` records the distance for every member rather than only the cluster
 number: it is the column to look at before trusting one feature to speak for a group.
 
 ## Dropping features from the final table
 
 Trimming removes values rather than rows, so a feature can be missing for most objects and
-still be present as a column. `[subset] drop_missing` removes the ones too empty to be worth
-carrying: a feature missing `[subset] max_missing` percent of the table **or more** is left out,
-30% by default.
+still be present as a column. `[missing_data] drop_missing` removes the ones too empty to be worth
+carrying: a feature missing `[missing_data] max_missing` percent of the table **or more** is
+left out, 30% by default.
 
 It is applied over the **whole** table, before anything downstream subsamples. That is one
 decision for the whole experiment, so a feature is either in the analysis or out of it —
@@ -69,16 +69,17 @@ choosing one.
 features. Two chains, two numbers; see [Reproducing the published run](reproducing.md) for why
 there are two.)
 
-`[subset] exclude` is the other half: exact feature names to leave out whatever their quality —
-the escape hatch for a judgement no rule expresses, such as a feature known to be an artifact of
-one assay. Exact names rather than patterns, because a regex that quietly takes a second feature
-with it is the wrong tool for a decision made one feature at a time; a name that matches nothing
-is reported by `cdr-fs check`, since the failure mode is that the feature stays in and nobody
-notices. `subset_<list>_features.tsv` records which rule removed each feature, and an explicit
-exclusion is reported as an exclusion even when the missing-data rule would also have caught it.
+`[missing_data] exclude` is the other half: exact feature names to leave out whatever their
+quality — the escape hatch for a judgement no rule expresses, such as a feature known to be an
+artifact of one assay. Exact names rather than patterns, because a regex that quietly takes a
+second feature with it is the wrong tool for a decision made one feature at a time; a name that
+matches nothing is reported by `cdr-fs check`, since the failure mode is that the feature stays
+in and nobody notices. `final_<list>_features.tsv` records which rule removed each feature, and
+an explicit exclusion is reported as an exclusion even when the missing-data rule would also
+have caught it.
 
 Nothing else is filtered. A constant feature, or one whose surviving values all come from a
-single object, is named in the report and flagged in `subset_<list>_features.tsv`; what to do
+single object, is named in the report and flagged in `final_<list>_features.tsv`; what to do
 about that depends on the analysis, and guessing is worse than saying so.
 
 ## The figures
@@ -94,14 +95,14 @@ recomputing anything:
   features ordered by median, on a broken axis (linear below a split, logarithmic above). On
   `emd_baseline.tsv` this is the between-replicate reproducibility floor; on `emd.tsv` it is
   the treatment distances to read against that floor.
-- **Dendrogram** — the tree correlation pruning cut, with the cut drawn on it and each cluster
+- **Dendrogram** — the tree correlation collapsing cut, with the cut drawn on it and each cluster
   of three or more members coloured.
 
 A curve in a fit panel is the fitted function evaluated at the exposure levels and joined up,
 as the published figures show it. The `fit.tsv` parameters are written at full precision so a
-drawn curve reproduces the AIC printed beside it — which is asserted, and which fails for about
-one fit in sixteen if the parameters are rounded to six digits, because a fitted inflection can
-settle right against the `log(x + 1e-10)` guard.
+drawn curve reproduces the AIC printed beside it — which fails for about one fit in sixteen if the
+parameters are rounded to six digits, because a fitted inflection can settle right against the
+`log(x + 1e-10)` guard.
 
 The dendrogram colours links and leaf labels from the same cluster table, so a coloured subtree
 is a cluster. The original drew the tree with one linkage method and cut it with another, so
@@ -112,5 +113,4 @@ its colours were only approximately the clustering.
 - [Configuration](configuration.md) — every key, its default and its meaning
 - [Describing your experiment](experiment-design.md) — the twelve keys that state facts about the experiment
 - [Reproducing the published run](reproducing.md) — the four checks against the published outputs
-- [Tests](testing.md) — what the suite protects, and how to run the golden regressions
 - [README](../README.md) — the method, the stages and an example run

@@ -71,8 +71,8 @@ def test_the_object_index_columns_are_metadata(localised):
     """`Number_Object_Number` is CellProfiler's within-image object label, not a measurement.
 
     The published run carried all eight of those columns as features - seven passed the
-    concentration-response gate and two survived correlation pruning - and removed them by name
-    downstream. Declaring them metadata makes the same decision at the start.
+    concentration-response gate and two survived the correlation stage - and removed them by
+    name downstream. Declaring them metadata makes the same decision at the start.
     """
     from cdr_fs.schema import resolve_schema
 
@@ -96,7 +96,7 @@ def test_the_exclusion_list_ships_empty(localised):
     on their own, and the two features the published run struck out by hand survive on their
     own merits. Naming them here would take the final list from 95 to 93.
     """
-    assert load_config(localised).subset.exclude == ()
+    assert load_config(localised).missing_data.exclude == ()
 
 
 def test_the_quickstart_runs_exactly_as_shipped(monkeypatch):

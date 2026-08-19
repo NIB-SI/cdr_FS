@@ -9,8 +9,8 @@ curves are six standard concentration–response models ranked by AIC and BIC. T
 
 > The method was developed for, and has been applied to, one dataset — the RTgill-W1 screen
 > of [Tome et al. 2026](#origin). The experimental design is read from a configuration file
-> rather than written into the code, and that is tested; it is a statement about the code,
-> not evidence that the method carries to another organism, assay or chemistry.
+> rather than written into the code — a statement about the code, not evidence that the
+> method carries to another organism, assay or chemistry.
 > [Reproducing the published run](#reproducing-the-published-run) says which published
 > numbers come back.
 
@@ -38,6 +38,8 @@ Using distributions rather than per-well means is the point: a subpopulation can
 the population mean stays put, and a distance between distributions registers that where a
 difference of means does not.
 
+### The limits of the question
+
 **The whole thing rests on one assumption** — that a higher exposure pushes a feature's
 distribution further from the control than a lower one does. That is what makes the
 distances a series worth fitting a curve to, and what the positive-slope gate tests. A
@@ -48,6 +50,13 @@ a middle band — is not what this looks for.
 exactly like one whose values rise: "positive slope" describes the distance from the control
 growing, not the measurement growing. Which way a retained feature moved is a question for
 the data, and this tool does not answer it.
+
+### What it does not do
+
+It starts from a per-object table and stops at a list of feature names. Image quality control,
+CellProfiler, segmentation, per-object pooling and row/plate standardization sit upstream, all
+tied to a particular plate design; the UMAP, MMD and Mahalanobis analyses that consume the
+selected features sit downstream. [HCS-proc](https://github.com/NIB-SI/HCS-proc) covers those.
 
 ## Installation
 
@@ -66,19 +75,21 @@ dataset, committed so that there is something to run before you download 121 GB.
 repository root:
 
 ```bash
-cdr-fs check  -c examples/quickstart.ini --scan
-cdr-fs emd    -c examples/quickstart.ini
-cdr-fs fit    -c examples/quickstart.ini
-cdr-fs select -c examples/quickstart.ini
-cdr-fs prune  -c examples/quickstart.ini
-cdr-fs subset -c examples/quickstart.ini
-cdr-fs plot   -c examples/quickstart.ini --only fits --features results/pruned.txt
+cdr-fs check        -c examples/quickstart.ini --scan
+cdr-fs emd          -c examples/quickstart.ini
+cdr-fs fit          -c examples/quickstart.ini
+cdr-fs select       -c examples/quickstart.ini
+cdr-fs correlation  -c examples/quickstart.ini
+cdr-fs missing_data -c examples/quickstart.ini
+cdr-fs plot         -c examples/quickstart.ini --only fits --features results/representatives.txt
 ```
 
 About fifty seconds in total, most of it in `fit`. Results land in `results/`.
 
-**Start with `check`.** It reads the configuration and the table's header, and prints how the
-columns resolved. This is the line to look at:
+### Start with `check`
+
+It reads the configuration and the table's header, and prints how the columns resolved. This
+is the line to look at:
 
 ```
 [columns]  30 = 10 metadata + 20 feature(s)
@@ -87,11 +98,32 @@ columns resolved. This is the line to look at:
     counts_*        counts_RelateLysoCell, counts_RelateMitoCell
 ```
 
-If that feature count is not what you expect, stop and fix `[schema] metadata_patterns`
-before running anything else — see [Traps](#traps). `--scan` additionally reads the exposure
-and stratum columns to confirm the levels you declared actually occur in the data.
+If that feature count is not what you expect, stop and fix `[schema] metadata_patterns` before
+running anything else. The patterns name the *metadata*, and everything they fail to match is a
+feature — so a pattern that matches too much quietly removes real measurements, and nothing
+later says so. Five of the reference dataset's columns begin with `counts_` and only three are
+metadata: a tidy `^counts_` discards `counts_RelateLysoCell`, a feature the published run kept.
+→ [Configuration](docs/configuration.md#one-warning-worth-reading-before-you-write-metadata_patterns)
 
-**Then the chain.** Each stage prints what it measured and what it could not:
+`check` prints a second line worth reading, for the same reason — nothing else can catch this
+one either:
+
+```
+exposure axis     10 is the LOWEST exposure, 2 the highest   (11.3683 -> 1000)
+```
+
+`[design] levels` is the response axis and it runs low to high, but the labels themselves tell
+the tool nothing: the reference dataset's own labels count *down* as exposure climbs. A list
+written the wrong way round runs to completion, produces an identical distance table, negates
+every slope and retains nothing. Read that line against your own plate map.
+→ [Describing your experiment](docs/experiment-design.md)
+
+`--scan` additionally reads the exposure and stratum columns to confirm the levels you
+declared actually occur in the data.
+
+### Then the chain
+
+Each stage prints what it measured and what it could not:
 
 ```
 $ cdr-fs emd -c examples/quickstart.ini
@@ -101,11 +133,13 @@ reading tests/fixtures/subset.tsv ...
   6 (feature, comparison) cell(s) skipped - a population held no values: rp_norm_Mean_PunctaLyso_...
 wrote results/emd.tsv  (60.72 KiB)
 458 distance(s) over 24 comparison(s) x 20 feature(s)
+  22 (feature, comparison) cell(s) skipped - a population held no values: rp_norm_Mean_PunctaLyso_...
 wrote results/emd_baseline.tsv  (45.50 KiB)
 
 $ cdr-fs fit -c examples/quickstart.ini
 fitted 76 series of 9 point(s) over 20 feature(s) x 4 stratum/strata
   4 series not fitted for want of a complete exposure series, across 1 feature(s): rp_norm_Mean_...
+  1 feature(s) were never fitted on any stratum and so cannot be selected: rp_norm_Mean_PunctaLyso_...
   20 fit(s) did not converge: BC4 3, BC5 3, LL4 6, WB1.4 8
 wrote results/fit.tsv  (81.21 KiB)
 
@@ -118,43 +152,43 @@ wrote results/select_evidence.tsv  (9.20 KiB)
 wrote results/selected.txt  (9 feature(s))
 ```
 
-Those counts are worth checking against the design rather than taking on trust. 36
-comparisons is 4 strata × 9 exposure levels; 36 × 20 features, less 6 cells where a
-population was empty, is 714 distances. The baseline's 24 is 4 strata × the 6 unordered pairs
-of 4 replicates. 76 series is 20 × 4 less the 4 that were incomplete, and `select` says "of
-19" rather than "of 20" because one feature was never fitted on any stratum — `fit` names it
-in the line above.
+Every count in those reports is a product of your design, so check them against it rather
+than taking them on trust: 36 comparisons is 4 strata × 9 exposure levels, and the baseline's
+24 is 4 strata × the 6 unordered pairs of 4 replicates. Where a number is short, the line
+above says why — `select` says "of 19" rather than "of 20" because `fit` could not fit one
+feature on any stratum.
 
-**What came out.** The funnel for this run:
+### What came out
+
+The funnel for this run:
 
 ```
 30 columns  →  10 metadata + 20 features   (check)
             →  19 reach selection          (fit: one feature never fitted)
             →   9 selected                 (select: 10 no better than a constant)
-            →   9 after correlation pruning
+            →   9 after correlation collapsing
             →   9 after the 30% missing-data filter
 ```
 
-`results/subset_pruned_retained.txt` is the answer — one feature name per line. When a run
+`results/final_representatives_retained.txt` is the answer — one feature name per line. When a run
 retains nothing, `select_evidence.tsv` is where to look first: it carries the linear slope
 and the winning model for every feature and stratum.
 
-Three things about this run that are normal and look alarming:
+### Three things about this run that are normal and look alarming
 
-- **`prune` removed nothing.** With 20 features and a `|r| ≥ 0.9` threshold, no pair is
-  redundant. On the published 471 it collapses 175 features to 97.
+- **`correlation` removed nothing.** With 20 features and a `|r| ≥ 0.9` threshold, no pair is
+  redundant. On the reference dataset it collapses 175 selected features to 97.
 - **`fit` prints a scipy `OptimizeWarning` to stderr.** Fits that genuinely fail are counted
   on stdout — "20 fit(s) did not converge" — and are expected; some shapes do not fit some
   series.
 - **`plot` without `--features` draws every feature in the distance table.** Here that is 15
   figures and 8 MB; on a full run it is hundreds of pages.
 
-This configuration is a smoke test of the tool, not a reproduction of the method: it turns
-trimming off, because the fixture holds one to eight cells per well and a within-well
+**This configuration is a smoke test of the tool, not a reproduction of the method.** It it
+turns trimming off, because the fixture holds one to eight cells per well and a within-well
 percentile on two values discards both, and it fits all nine exposure levels rather than
-withholding the top one. [`examples/published.ini`](examples/published.ini) is the method as
-it was published, and it is the file to copy for real work.
-
+withholding the top one. The method as it was published is
+[`examples/published.ini`](examples/published.ini), and that is the file to copy for real work.
 
 ## The pipeline
 
@@ -162,15 +196,15 @@ One `.ini` file describes a run, and `-c/--config` points at it from anywhere. E
 reads the previous one's output from `[output] dir` under a stable name.
 
 ```bash
-cdr-fs check  -c config.ini          # validate the configuration, report the schema
-cdr-fs check  -c config.ini --scan   # also confirm the design occurs in the data
-cdr-fs trim   -c config.ini          # write the trimmed table  (optional — see below)
-cdr-fs emd    -c config.ini          # distances per feature, stratum and contrast
-cdr-fs fit    -c config.ini          # fit the models to each distance series
-cdr-fs select -c config.ini          # apply the retention rule
-cdr-fs prune  -c config.ini          # collapse near-redundant features   (optional)
-cdr-fs subset -c config.ini          # write the table restricted to what survived
-cdr-fs plot   -c config.ini          # draw the figures from whatever tables exist
+cdr-fs check        -c config.ini          # validate the configuration, report the schema
+cdr-fs check        -c config.ini --scan   # also confirm the design occurs in the data
+cdr-fs trim         -c config.ini          # write the trimmed table  (optional — see below)
+cdr-fs emd          -c config.ini          # distances per feature, stratum and contrast
+cdr-fs fit          -c config.ini          # fit the models to each distance series
+cdr-fs select       -c config.ini          # apply the retention rule
+cdr-fs correlation  -c config.ini          # collapse near-redundant features   (optional)
+cdr-fs missing_data -c config.ini          # drop sparse features, write the final table
+cdr-fs plot         -c config.ini          # draw the figures from whatever tables exist
 ```
 
 | Stage | Writes |
@@ -178,77 +212,32 @@ cdr-fs plot   -c config.ini          # draw the figures from whatever tables exi
 | `emd` | `emd.tsv` — control against each level; `emd_baseline.tsv` — control against control, between replicates |
 | `fit` | `fit.tsv` |
 | `select` | `selected.txt`; `select_evidence.tsv` — per feature and stratum, which model won, by how much, and what the linear slope was |
-| `prune` | `pruned.txt`; `prune_clusters.tsv` — every feature with its cluster and its distance to the representative; `prune_linkage.tsv` — the tree and its leaf order |
-| `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and which rule removed it; `subset_<list>_retained.txt` |
+| `correlation` | `representatives.txt`; `correlation_clusters.tsv` — every feature with its cluster and its distance to the representative; `correlation_linkage.tsv` — the tree and its leaf order |
+| `missing_data` | `final_<list>.tsv` — the table restricted to that list; `final_<list>_features.tsv` — how much data each column holds and which rule removed it; `final_<list>_retained.txt` |
 | `plot` | `fit_<stratum>_part_<n>.png`; `emd.png` and `emd_baseline.png`; `dendrogram.png` |
 
-**`trim` is optional.** Every stage that needs cell-level data reads `[input] table` and
-applies the configured trim itself, so there is no need to materialise a trimmed copy — on
-the reference dataset that copy would be another 3.9 GB. `cdr-fs trim` exists to write it out
-for inspection.
+### `trim` is optional
 
-**Which file is the answer?** `selected.txt` if you stop after `select`; `pruned.txt` if you
-prune; `subset_<list>_retained.txt` if you also apply the missing-data filter. Each is one
-feature name per line. When a run retains nothing, `select_evidence.tsv` is where to look
-first — it carries the slope and the winning model for every feature and stratum.
+Every stage that needs cell-level data reads `[input] table` and applies the configured trim
+itself, so there is no need to materialise a trimmed copy — on the reference dataset that
+copy would be another 3.9 GB. `cdr-fs trim` exists to write it out for inspection.
+
+### Which file is the answer?
+
+`selected.txt` if you stop after `select`; `representatives.txt` if you collapse correlated
+features; `final_<list>_retained.txt` if you also apply the missing-data filter. Each is one
+feature name per line.
+
+### When a stage refuses
 
 A stage refuses rather than write an artefact that would read as a result: `fit` will not
-write a table when no series was complete, and `prune` and `subset` will not run on an empty
-feature list. Exit codes are 0 for success, 2 for a configuration error, 3 for nothing to do.
+write a table when no series was complete, and `correlation` and `missing_data` will not run
+on an empty feature list. Exit codes are 0 for success, 2 for a configuration error, 3 for
+nothing to do.
 
-One module per stage, named for it: `emd.py`, `fit.py`, `select.py`, `prune.py`, `subset.py`,
-`trim.py`, `plots.py`, with `config.py` and `schema.py` underneath.
-
-## Traps
-
-Six things that are quiet when they go wrong. Each is explained fully on the page it links to.
-
-**A `^counts_` metadata pattern silently discards features.** `[schema] metadata_patterns`
-names the *metadata*, and everything unmatched is a feature — so an over-broad pattern
-removes real measurements. In the reference dataset five columns begin with `counts_` and
-only three are metadata:
-
-```
-counts_Cells, counts_Cytoplasm, counts_FilteredNuclei     segmentation QC  -> metadata
-counts_RelateLysoCell, counts_RelateMitoCell              organelle counts -> FEATURES
-```
-
-`counts_RelateLysoCell` survives the entire selection into the published retained list. Run
-`cdr-fs check` and read the `[columns]` line before trusting a pattern.
-→ [Configuration](docs/configuration.md#one-warning-worth-reading-before-you-write-metadata_patterns)
-
-**The mistake runs the other way too.** A column can be named like a measurement and be a
-label: CellProfiler's `Number_Object_Number` is an object index, and it responds to exposure
-because objects-per-image changes with dose. Only a pattern you write keeps it out.
-→ [Configuration](docs/configuration.md)
-
-**`[design] levels` must run low to high, and the labels do not tell the tool which end is
-which.** A reversed list runs to completion, produces an identical distance table, negates
-every linear slope, and retains nothing. Supplying `[design] dose` catches the case where the
-two lists disagree — a dose vector that falls while the levels are declared to rise is
-refused — but it cannot catch both being wrong the same way, because only you know which
-label was your top dose. So the real check is one line of `cdr-fs check`:
-
-```
-exposure axis     10 is the LOWEST exposure, 2 the highest   (11.3683 -> 1000)
-```
-
-Read it against your own plate map before you trust a run.
-→ [Experiment design](docs/experiment-design.md)
-
-**Read the stage tables with `cdr_fs.schema.read_stage_table`, not a bare
-`pandas.read_csv`.** An experiment with no `[schema] group_by` has one stratum whose label is
-the empty string; pandas reads an empty field as `NaN`, and `groupby` then drops it — taking
-the whole table with it. → [Testing](docs/testing.md)
-
-**`[select] strata` narrows the whole run, not only the selection.** `emd` and `fit` read it
-too, so setting it to one stratum leaves a distance table holding only that stratum, with
-nothing in the file to say it is partial. → [Experiment design](docs/experiment-design.md)
-
-**`[prune] aggregate_by` must name a unit that varies along the exposure axis.** Correlations
-are computed between unit medians, so if each unit spans the whole dilution series then every
-unit looks alike and pruning collapses nothing. Check the `N unit(s) of …` line in the
-report. → [Method notes](docs/method-notes.md)
+There is one module per stage, named for it — `emd.py`, `fit.py`, `select.py`,
+`correlation.py`, `missing_data.py`, `trim.py`, `plots.py` — with `config.py` and `schema.py`
+underneath.
 
 ## Reproducing the published run
 
@@ -261,57 +250,49 @@ difference is attributable to the stage under test:
 |---|---|---|
 | `emd` | the two EMD tables — 16,946 treatment and 11,292 baseline distances | reproduced; both population sizes on every row exact, distances within 8.5e-13 relative |
 | `select` | the two retained feature lists — **182** across all days, **374** on D5 alone | both reproduced as identical sets |
-| `prune` | the all-days list after pruning — **99** features | reproduced, and its composition matches the published categorization across all 4 organelles × 7 measurement families |
-| `subset` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
+| `correlation` | the all-days list after the correlation stage — **99** features | reproduced, and its composition matches the published categorization across all 4 organelles × 7 measurement families |
+| `missing_data` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
+
+The **182** and the **99** belong to the published metadata split, which carried CellProfiler's
+object-index columns as features; with those declared metadata, as `examples/published.ini`
+does, the same rules give 463 features → 175 → 97 → **95**. Both routes end at the same final
+list. [Reproducing the published run](docs/reproducing.md) sets the two out side by side.
 
 The `select` gate runs off the published fit table and needs only a 1 MB committed fixture,
-so it runs in CI; the others need the large inputs and are opt-in.
+so it needs no download; the others read the Zenodo files and are opt-in.
 → [Reproducing the published run](docs/reproducing.md)
 
-## Data
-
-The reference dataset is 121 GB in total and lives on Zenodo:
-<https://doi.org/10.5281/zenodo.17951792> (CC-BY-4.0). The single file this tool starts from
-is `cell_ID_pooled_median_row_plate_standardization_cid.txt`, 3.9 GB — the untrimmed,
-row/plate standardized per-cell table, 503,920 cells × 481 columns. It is deliberately
-*untrimmed*: trimming lives in this tool, so a run reproduces that step rather than
-inheriting it.
-
-Nothing that large belongs in git. Put it in `data/`, which is ignored; the committed
-fixtures under [`tests/fixtures/`](tests/fixtures/README.md) are small subsets that let the
-suite — and the quickstart above — run without it.
-
-## Tests
+### Checking it yourself
 
 ```bash
-pytest
+pytest                                    # the checks that need no data, about two seconds
+CDR_FS_GOLDEN=1 pytest                    # and the ones that read the Zenodo files
 ```
 
-Forty-three tests, about twenty seconds, no large data needed. Two of the four reproduction
-gates need the Zenodo files and are opt-in via `CDR_FS_GOLDEN=1`.
-→ [Testing](docs/testing.md)
+The suite is deliberately small: it exists to hold these four numbers, and little else. The
+gates that compare against the published run itself need the dataset in `data/`, so they skip
+unless you opt in.
+
+## Test data
+
+The quickstart above runs on `tests/fixtures/subset.tsv`, one of the committed slices under
+[`tests/fixtures/`](tests/fixtures/README.md) that let everything above run without a download.
+
+[Reproducing the published run](#reproducing-the-published-run) needs the dataset itself. It is
+121 GB in total and lives on Zenodo: <https://doi.org/10.5281/zenodo.17951792> (CC-BY-4.0). The
+single file this tool starts from is `cell_ID_pooled_median_row_plate_standardization_cid.txt`,
+3.9 GB — the untrimmed, row/plate standardized per-cell table, 503,920 cells × 481 columns. It
+is deliberately *untrimmed*: trimming lives in this tool, so a run reproduces that step rather
+than inheriting it. Nothing that large belongs in git; put it in `data/`, which is ignored.
 
 ## Documentation
 
 | Page | What is on it |
 |---|---|
 | [Configuration](docs/configuration.md) | every key, what it defaults to, and the two patterns worth getting right |
-| [Experiment design](docs/experiment-design.md) | which keys state your design, what to write when a piece of it is missing, and what the format cannot express |
-| [Method notes](docs/method-notes.md) | pooling replicates, correlation pruning, the missing-data filter, and the figures |
+| [Describing your experiment](docs/experiment-design.md) | which keys state your design, what to write when a piece of it is missing, and what the format cannot express |
+| [Method notes](docs/method-notes.md) | pooling replicates, correlation collapsing, the missing-data filter, and the figures |
 | [Reproducing the published run](docs/reproducing.md) | what each of the four gates checks, and what the numbers are and are not |
-| [Testing](docs/testing.md) | what the suite covers and why it is small |
-
-## Scope
-
-**In:** the schema declaration, optional trimming, contrast definition, the EMD computation,
-multi-model fitting with information-criterion ranking, the retention rule with explicit
-quantifiers, per-feature diagnostic panels, and optional correlation pruning. Every stage
-prints a report of what it measured and what it could not.
-
-**Out:** image quality control, CellProfiler, segmentation, per-object pooling, and row/plate
-standardization — all tied to a particular plate design and belonging upstream. Also out:
-UMAP, MMD and Mahalanobis analyses, which consume this tool's output.
-[HCS-proc](https://github.com/NIB-SI/HCS-proc) covers all of those.
 
 ## Origin
 
@@ -327,7 +308,7 @@ HCS-proc remains the citable record of the published pipeline. This repository t
 stage of it and makes it installable and configuration-driven, so that the experimental
 design is declared in a file instead of edited into five scripts. The original author's
 history is preserved here; because git does not score the extraction as a rename, reach it
-through the old path — `git log --oneline -- legacy/plots_emd_model_drc.py`.
+through the old path — `git log --oneline --follow -- legacy/plots_emd_model_drc.py`.
 
 ## Licence and citation
 

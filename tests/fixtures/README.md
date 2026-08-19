@@ -16,7 +16,7 @@ The 481 column names of the full table, one per line, in table order:
 head -1 cell_ID_pooled_median_row_plate_standardization_cid.txt | tr '\t' '\n'
 ```
 
-This is what lets `test_schema.py` assert the real arithmetic — 481 columns, 10 metadata,
+This is what lets `test_examples.py` assert the real arithmetic — 481 columns, 10 metadata,
 471 features, 469 `rp_norm_*` plus the two organelle counts — with no data present. It is
 also the guard on the `counts_` trap: a `^counts_` metadata pattern resolves to 469
 features here, and the test says so.
@@ -64,8 +64,8 @@ head -1 all_days_trimmed_features.txt | tr '\t' '\n' | grep -vxE \
 the far end of the pipeline. A `^counts_` metadata pattern would have classified it as
 metadata, and a feature the published run retained could never have reached selection.
 
-The all-days list is also the *input* to correlation pruning, which is how
-`tests/test_golden_prune.py` can check that stage on its own.
+The all-days list is also the *input* to the correlation stage, which is how
+`tests/test_golden_correlation.py` can check that stage on its own.
 
 ## `published_model_fit_results_pre_bc4_fix.txt` (1.1 MB)
 
@@ -88,14 +88,14 @@ minus 10,725 rows leaves 555 fits that did not converge, against 541 for `cdr_FS
 
 ## `hcs_proc_feature_categories.tsv` (34 KB) and `published_categories_all_days.tsv`
 
-What `tests/test_golden_prune.py` checks the pruned list's *composition* against, rather than
-only its length.
+What `tests/test_golden_correlation.py` checks the representatives list's *composition*
+against, rather than only its length.
 
 The first is `scripts/categorization/feature_categories.tsv` from
 [HCS-proc](https://github.com/NIB-SI/HCS-proc) (MIT), copied unchanged: one row per feature
 giving its measurement category and the organelle it describes. The second is the published
-result of applying that lookup to the pruned feature list, a 4 x 7 table of counts transcribed
+result of applying that lookup to the representatives list, a 4 x 7 table of counts transcribed
 from the bar labels of HCS-proc's `files/feature_categories_barplot.png`. Every segment of that
 figure is labelled, so the figure is a complete table rather than a picture to eyeball, and it
-is generated from this stage's output - after pruning, before the missing-data filter the
-dimension-reduction step applies. Its 24 filled cells sum to 99.
+is generated from this stage's output - after correlation collapsing, before the missing-data
+filter the dimension-reduction step applies. Its 24 filled cells sum to 99.

@@ -69,13 +69,13 @@ _ALLOWED: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "emd": (frozenset(), frozenset({"contrasts", "baseline", "per_replicate"})),
     "fit": (frozenset(), frozenset({"models", "x_scale", "rank_by"})),
     "select": (frozenset(), frozenset({"slope_positive", "nonconstant", "strata"})),
-    "prune": (
+    "correlation": (
         frozenset({"enabled"}),
         frozenset(
             {"threshold", "linkage", "representative", "aggregate_by", "fill_missing"}
         ),
     ),
-    "subset": (frozenset({"drop_missing"}), frozenset({"max_missing", "exclude"})),
+    "missing_data": (frozenset({"drop_missing"}), frozenset({"max_missing", "exclude"})),
     "output": (frozenset({"dir"}), frozenset()),
 }
 
@@ -162,7 +162,7 @@ class SelectSpec:
 
 
 @dataclass(frozen=True)
-class PruneSpec:
+class CorrelationSpec:
     enabled: bool
     threshold: float
     linkage: str
@@ -174,7 +174,7 @@ class PruneSpec:
 
 
 @dataclass(frozen=True)
-class SubsetSpec:
+class MissingDataSpec:
     drop_missing: bool
     #: Percent. A feature missing this much of the table or more is dropped.
     max_missing: float
@@ -197,8 +197,8 @@ class Config:
     emd: EmdSpec
     fit: FitSpec
     select: SelectSpec
-    prune: PruneSpec
-    subset: SubsetSpec
+    correlation: CorrelationSpec
+    missing_data: MissingDataSpec
     output: OutputSpec
     #: "section.key" for every value that came from a default rather than the file.
     defaulted: tuple[str, ...]
@@ -220,9 +220,9 @@ class Config:
         if self.trim.enabled:
             for column in self.trim.scope:
                 roles.setdefault(column, "[trim] scope")
-        if self.prune.enabled:
-            for column in self.prune.aggregate_by:
-                roles.setdefault(column, "[prune] aggregate_by")
+        if self.correlation.enabled:
+            for column in self.correlation.aggregate_by:
+                roles.setdefault(column, "[correlation] aggregate_by")
         return roles
 
     # ------------------------------------------------------------- data checks
@@ -286,10 +286,12 @@ class Config:
             )
         # A mistyped exclusion fails in the dangerous direction: the feature stays in the
         # output and nothing says so. Names are matched exactly, so say which ones missed.
-        unmatched = [name for name in self.subset.exclude if name not in resolved.feature_set]
+        unmatched = [
+            name for name in self.missing_data.exclude if name not in resolved.feature_set
+        ]
         if unmatched:
             warnings.append(
-                f"[subset] exclude names {len(unmatched)} entry/entries that are not "
+                f"[missing_data] exclude names {len(unmatched)} entry/entries that are not "
                 f"features of {self.input.table.name}: {', '.join(unmatched)}\n"
                 "  exclusions are matched exactly, so a mistyped name excludes nothing"
             )
@@ -502,8 +504,8 @@ def load_config(path: str | Path) -> Config:
     emd_spec = _read_emd(reader, design_spec, schema_spec)
     fit_spec = _read_fit(reader, design_spec)
     select_spec = _read_select(reader, schema_spec, fit_spec)
-    prune_spec = _read_prune(reader, trim_spec)
-    subset_spec = _read_subset(reader)
+    correlation_spec = _read_correlation(reader, trim_spec)
+    missing_data_spec = _read_missing_data(reader)
     output_spec = OutputSpec(dir=Path(reader.text("output", "dir")))
 
     return Config(
@@ -515,8 +517,8 @@ def load_config(path: str | Path) -> Config:
         emd=emd_spec,
         fit=fit_spec,
         select=select_spec,
-        prune=prune_spec,
-        subset=subset_spec,
+        correlation=correlation_spec,
+        missing_data=missing_data_spec,
         output=output_spec,
         defaulted=tuple(reader.defaulted),
     )
@@ -535,12 +537,18 @@ def _check_sections_and_keys(path: Path, parser: configparser.ConfigParser) -> N
         )
     present = set(parser.sections())
     unknown = sorted(present - set(_ALLOWED))
-    if unknown:
-        raise ConfigError(
-            f"{path}: unknown section(s): {', '.join('[' + s + ']' for s in unknown)}\n"
-            f"  known sections: {', '.join('[' + s + ']' for s in _ALLOWED)}"
-        )
     absent = sorted(set(_ALLOWED) - present)
+    # Reported together rather than one at a time: a file written against an earlier version
+    # has both, and "unknown [prune]" beside "missing [correlation]" lets the mapping read
+    # itself. Reporting only the unknown half leaves the user to infer the rename.
+    if unknown:
+        lines = [
+            f"{path}: unknown section(s): {', '.join('[' + s + ']' for s in unknown)}",
+            f"  known sections: {', '.join('[' + s + ']' for s in _ALLOWED)}",
+        ]
+        if absent:
+            lines.insert(1, f"  missing: {', '.join('[' + s + ']' for s in absent)}")
+        raise ConfigError("\n".join(lines))
     if absent:
         raise ConfigError(
             f"{path}: missing section(s): {', '.join('[' + s + ']' for s in absent)}\n"
@@ -851,15 +859,15 @@ def _read_select(
     )
 
 
-def _read_subset(reader: _Reader) -> SubsetSpec:
+def _read_missing_data(reader: _Reader) -> MissingDataSpec:
     # A filter that changes which columns leave the pipeline has to be stated, for the same
-    # reason [trim] enabled and [prune] enabled are required rather than defaulted.
-    return SubsetSpec(
-        drop_missing=reader.boolean("subset", "drop_missing"),
+    # reason [trim] enabled and [correlation] enabled are required rather than defaulted.
+    return MissingDataSpec(
+        drop_missing=reader.boolean("missing_data", "drop_missing"),
         # Exclusive at zero: "missing 0% or more" is true of every feature, so a threshold of
         # zero would empty the table rather than filter it.
         max_missing=reader.number(
-            "subset",
+            "missing_data",
             "max_missing",
             default="30",
             minimum=0.0,
@@ -869,48 +877,48 @@ def _read_subset(reader: _Reader) -> SubsetSpec:
         # Exact names, not patterns: an exclusion is a judgement about one feature, and a
         # regex that quietly matches a second one is the wrong tool for that.
         exclude=reader.unique(
-            "subset", "exclude", reader.items("subset", "exclude", default="")
+            "missing_data", "exclude", reader.items("missing_data", "exclude", default="")
         ),
     )
 
 
-def _read_prune(reader: _Reader, trim: TrimSpec) -> PruneSpec:
-    enabled = reader.boolean("prune", "enabled")
+def _read_correlation(reader: _Reader, trim: TrimSpec) -> CorrelationSpec:
+    enabled = reader.boolean("correlation", "enabled")
     # Absent means "the same unit trimming works within", which is the published run's well.
     # Present but empty is a deliberate choice to correlate the rows as they are, so the two
     # cases have to be told apart rather than both read as "no columns".
-    if reader.parser.has_option("prune", "aggregate_by"):
+    if reader.parser.has_option("correlation", "aggregate_by"):
         aggregate_by = reader.unique(
-            "prune", "aggregate_by", reader.items("prune", "aggregate_by")
+            "correlation", "aggregate_by", reader.items("correlation", "aggregate_by")
         )
     else:
         aggregate_by = trim.scope
-        reader.defaulted.append("prune.aggregate_by")
+        reader.defaulted.append("correlation.aggregate_by")
         if enabled and not aggregate_by:
             raise reader.fail(
-                "prune",
+                "correlation",
                 "aggregate_by",
-                "is required when [prune] enabled is true and [trim] scope is empty: "
+                "is required when [correlation] enabled is true and [trim] scope is empty: "
                 "correlations are computed between features aggregated within each group of "
                 "these columns. Set it to the columns identifying one experimental unit, or "
                 "set it to nothing to correlate the rows as they are",
             )
-    return PruneSpec(
+    return CorrelationSpec(
         enabled=enabled,
         threshold=reader.number(
-            "prune",
+            "correlation",
             "threshold",
             default="0.9",
             minimum=0.0,
             maximum=1.0,
             exclude_minimum=True,
         ),
-        linkage=reader.choice("prune", "linkage", LINKAGES, default="average"),
+        linkage=reader.choice("correlation", "linkage", LINKAGES, default="average"),
         representative=reader.choice(
-            "prune", "representative", REPRESENTATIVES, default="alphabetical"
+            "correlation", "representative", REPRESENTATIVES, default="alphabetical"
         ),
         aggregate_by=aggregate_by,
         fill_missing=reader.choice(
-            "prune", "fill_missing", FILL_MISSING, default="column_mean"
+            "correlation", "fill_missing", FILL_MISSING, default="column_mean"
         ),
     )

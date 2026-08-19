@@ -54,7 +54,7 @@ class ResolvedSchema:
 
     `metadata` and `features` together are exactly `columns`, each in the table's own
     column order - never sorted, because feature order decides tie-breaking downstream
-    (the alphabetical cluster representative in `prune`, for one).
+    (the alphabetical cluster representative in `correlation`, for one).
     """
 
     columns: tuple[str, ...]

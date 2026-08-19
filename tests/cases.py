@@ -1,11 +1,7 @@
-"""Configuration fixtures and the table of misconfigurations that must be rejected.
+"""Configuration fixtures for the reproduction gates.
 
-Kept free of pytest imports so the same cases can be replayed by a plain script when
-pytest is not installed.
-
-`INVALID_CASES` is the specification of `config.py`'s job: every entry is a way to get a
-run wrong, and the expected fragment is what the user should be told about it. Adding a
-validation rule means adding a case here.
+`write_config` renders the published design against the committed fixture, so a gate can
+state its own departures from it as overrides rather than carrying a whole `.ini`.
 """
 
 from __future__ import annotations
@@ -54,8 +50,8 @@ BASE: dict[str, dict[str, str]] = {
     "emd": {},
     "fit": {},
     "select": {"strata": "D1,D5,D7,D9"},
-    "prune": {"enabled": "true"},
-    "subset": {"drop_missing": "false"},
+    "correlation": {"enabled": "true"},
+    "missing_data": {"drop_missing": "false"},
     "output": {"dir": "<output>"},
 }
 
@@ -71,9 +67,6 @@ def config_text(
 
     An override value of `None` removes the key, or the whole section when the key is a
     bare section name. `"section.key": "value"` adds or replaces.
-
-    `base` names the starting configuration; the default describes the published design,
-    and `reshape.RESHAPED` describes the structurally different one.
     """
     sections = {name: dict(keys) for name, keys in (base or BASE).items()}
     sections["input"]["table"] = str(table)
@@ -133,234 +126,3 @@ def validate(path: Path):
     config = load_config(path)
     warnings = config.validate_columns(read_header(config.input.table, config.input.sep))
     return config, warnings
-
-
-# (label, overrides, fragment the message must contain)
-INVALID_CASES: list[tuple[str, dict[str, str | None], str]] = [
-    # --- structure -----------------------------------------------------------
-    ("unknown section", {"selection": ""}, "unknown section(s): [selection]"),
-    ("missing section", {"prune": None}, "missing section(s): [prune]"),
-    (
-        "unknown key",
-        {"trim.lower_percentil": "2.5"},
-        "[trim] has unknown key(s): lower_percentil",
-    ),
-    # --- input ---------------------------------------------------------------
-    (
-        "input table absent",
-        {"input.table": "no/such/table.tsv"},
-        "[input] table - does not exist",
-    ),
-    (
-        "sep given as an escape",
-        {"input.sep": "\\t"},
-        "expected one of: tab, comma, semicolon",
-    ),
-    (
-        "wrong separator for the file",
-        {"input.sep": "comma"},
-        "check [input] sep",
-    ),
-    # --- schema --------------------------------------------------------------
-    (
-        "uncompilable regex",
-        {"schema.metadata_patterns": "^counts_[Cells$"},
-        "is not a valid regex",
-    ),
-    (
-        "no metadata patterns",
-        {"schema.metadata_patterns": ""},
-        "every column would be treated as a feature",
-    ),
-    (
-        "condition column not declared metadata",
-        {"schema.metadata_patterns": "\n".join(METADATA_PATTERNS[:1])},
-        "would be treated as features",
-    ),
-    (
-        "condition column misspelled",
-        {"schema.condition": "Concentraton"},
-        "are not in subset.tsv: Concentraton",
-    ),
-    (
-        "every column matched",
-        {"schema.metadata_patterns": "."},
-        "leaving no features to select from",
-    ),
-    # --- design --------------------------------------------------------------
-    (
-        "control listed among the levels",
-        {"design.levels": "11,10,9,8,7,6,5,4,3,2"},
-        "contains the control level",
-    ),
-    ("one level only", {"design.levels": "10"}, "needs at least 2"),
-    ("repeated level", {"design.levels": "10,9,9,8,7,6,5,4,3"}, "repeats: 9"),
-    (
-        "dose length mismatch",
-        {"design.dose": "11.36,19.88,34.8"},
-        "index-matched",
-    ),
-    (
-        # The one automatic guard on the direction of the exposure axis.
-        "dose falling while levels rise",
-        {"design.dose": "1000,571.38,326.47,186.54,106.58,60.9,34.8,19.88,11.36"},
-        "does not rise with [design] levels",
-    ),
-    (
-        "dose not numeric",
-        {"design.dose": "11.36,19.88,34.8,60.9,106.58,186.54,326.47,571.38,low"},
-        "'low' is not a number",
-    ),
-    (
-        "excluded level unknown",
-        {"design.exclude_from_fit": "1"},
-        "absent from [design] levels: 1",
-    ),
-    (
-        "every level excluded",
-        {"design.exclude_from_fit": "10,9,8,7,6,5,4,3,2"},
-        "withholds every level",
-    ),
-    # --- trim ----------------------------------------------------------------
-    (
-        "trim enabled without percentiles",
-        {"trim.lower_percentile": None},
-        "[trim] lower_percentile - is required but missing",
-    ),
-    ("trim enabled without scope", {"trim.scope": None}, "is required when [trim] enabled"),
-    (
-        "inverted percentiles",
-        {"trim.lower_percentile": "97.5", "trim.upper_percentile": "2.5"},
-        "would be empty",
-    ),
-    (
-        "percentile out of range",
-        {"trim.upper_percentile": "197.5"},
-        "expected a number in [0, 100]",
-    ),
-    ("non-boolean flag", {"trim.enabled": "maybe"}, "expected a boolean"),
-    (
-        "trim scope column absent",
-        {"trim.scope": "Metadata_Day,Metadata_Plate"},
-        "are not in subset.tsv: Metadata_Plate",
-    ),
-    # --- emd -----------------------------------------------------------------
-    (
-        "baseline without a replicate column",
-        {"schema.pool_over": ""},
-        "[schema] pool_over names no replicate column",
-    ),
-    (
-        "per_replicate without a replicate column",
-        {"schema.pool_over": "", "emd.baseline": "none", "emd.per_replicate": "true"},
-        "[emd] per_replicate - is true",
-    ),
-    (
-        "contrast naming an unknown level",
-        {"emd.contrasts": "11v10,11v99"},
-        "neither the keyword",
-    ),
-    (
-        "keyword mixed with explicit contrasts",
-        {"emd.contrasts": "control_vs_each,11v10"},
-        "use one or the other",
-    ),
-    # --- fit -----------------------------------------------------------------
-    ("unknown model", {"fit.models": "BC4,LL5"}, "names unknown model(s): LL5"),
-    (
-        "dose axis without a dose vector",
-        {"fit.x_scale": "dose"},
-        "[design] dose is empty",
-    ),
-    (
-        "dose axis with a non-positive dose",
-        {
-            "fit.x_scale": "dose",
-            "design.dose": "0,19.88,34.8,60.9,106.58,186.54,326.47,571.38,1000",
-        },
-        "non-positive value(s): 10=0",
-    ),
-    (
-        # It was in the plan, and it is a trap: the models log x themselves.
-        "log_dose is not an x_scale",
-        {"fit.x_scale": "log_dose"},
-        "expected one of: rank, dose",
-    ),
-    (
-        "more parameters than points",
-        {"design.levels": "10,9,8,7,6", "design.exclude_from_fit": "6"},
-        "more points than parameters",
-    ),
-    ("unknown x_scale", {"fit.x_scale": "linear"}, "expected one of: rank, dose"),
-    # --- select --------------------------------------------------------------
-    (
-        "slope rule without the linear model",
-        {"fit.models": "BC4,BC5,LL4,WB1.4,Con"},
-        "does not include Lin",
-    ),
-    (
-        "nonconstant rule without the constant model",
-        {"fit.models": "BC4,BC5,LL4,WB1.4,Lin"},
-        "does not include Con",
-    ),
-    ("unknown quantifier", {"select.slope_positive": "some"}, "expected one of: any, all"),
-    (
-        "strata without a grouping column",
-        {"schema.group_by": ""},
-        "[schema] group_by is empty",
-    ),
-    # --- prune ---------------------------------------------------------------
-    (
-        "threshold above one",
-        {"prune.threshold": "1.5"},
-        "expected a number in (0, 1]",
-    ),
-    ("threshold of zero", {"prune.threshold": "0"}, "expected a number in (0, 1]"),
-    ("ward linkage", {"prune.linkage": "ward"}, "expected one of: average, complete, single"),
-    (
-        "unknown representative rule",
-        {"prune.representative": "median"},
-        "expected one of: alphabetical, first",
-    ),
-    (
-        "unknown missing-value policy",
-        {"prune.fill_missing": "zero"},
-        "expected one of: column_mean, none",
-    ),
-    (
-        "repeated aggregation column",
-        {"prune.aggregate_by": "Metadata_Well,Metadata_Well"},
-        "[prune] aggregate_by - repeats: Metadata_Well",
-    ),
-    (
-        "no unit to aggregate over",
-        {"trim.enabled": "false", "trim.scope": None},
-        "[prune] aggregate_by - is required",
-    ),
-    (
-        "aggregation column that is a feature",
-        {"prune.aggregate_by": "counts_RelateLysoCell"},
-        "[prune] aggregate_by",
-    ),
-    # --- subset --------------------------------------------------------------
-    (
-        "missing-data filter neither on nor off",
-        {"subset.drop_missing": None},
-        "[subset] drop_missing - is required",
-    ),
-    (
-        "missing-data threshold of zero",
-        {"subset.drop_missing": "true", "subset.max_missing": "0"},
-        "expected a number in (0, 100]",
-    ),
-    (
-        "missing-data threshold above a hundred percent",
-        {"subset.drop_missing": "true", "subset.max_missing": "130"},
-        "expected a number in (0, 100]",
-    ),
-    (
-        "repeated exclusion",
-        {"subset.exclude": "counts_RelateLysoCell,counts_RelateLysoCell"},
-        "[subset] exclude - repeats: counts_RelateLysoCell",
-    ),
-]

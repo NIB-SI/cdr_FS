@@ -1,4 +1,4 @@
-"""Optional correlation pruning: one representative per cluster of near-redundant features.
+"""Optional correlation collapsing: one representative per cluster of near-redundant features.
 
 Concentration-response selection asks of each feature whether it responds. It cannot ask
 whether two features are saying the same thing, and in morphological profiling many are:
@@ -10,12 +10,12 @@ The method:
 
 1. **Aggregate** the object-level table to one row per experimental unit, by median. In the
    published run the unit is one well of one replicate on one day, which is
-   `[prune] aggregate_by`. Correlating raw objects would measure within-well shape noise;
+   `[correlation] aggregate_by`. Correlating raw objects would measure within-well shape noise;
    correlating unit medians measures whether two features respond alike across the
    experiment.
 2. **Correlate** every pair of features (Pearson) across those units.
 3. **Cluster** on the distance `1 - |r|`, so that a strong *negative* correlation counts as
-   the redundancy it is. Agglomerative, average linkage, cut at `1 - [prune] threshold`.
+   the redundancy it is. Agglomerative, average linkage, cut at `1 - [correlation] threshold`.
 4. **Keep one member** of each cluster - by default the alphabetically first, which is what
    the published run did.
 
@@ -29,7 +29,7 @@ cut. One linkage serves both here.
 
 Trimming leaves NaN behind (see `trim.py`), so a unit median is taken over however many
 objects survived, and a feature whose well was emptied has no median at all.
-`[prune] fill_missing = column_mean` substitutes the feature's overall mean for every
+`[correlation] fill_missing = column_mean` substitutes the feature's overall mean for every
 missing *object-level* value before aggregating, which is what the published run did. It is
 worth knowing what that does: for a feature with many trimmed values it pulls unit medians
 toward the global mean, shrinking the between-unit spread that the correlation is computed
@@ -43,8 +43,8 @@ Two features whose correlation comes out undefined - a constant series, a column
 entirely empty, an infinity that survived trimming - get distance 1.0, the maximum. They
 therefore never merge with anything and are kept as singletons. That is the published
 behaviour, and it errs in the safe direction (keep, rather than silently discard), but it
-does mean an all-missing feature *survives* pruning. `PruneReport` names those features for
-exactly that reason.
+does mean an all-missing feature *survives* this stage. `CorrelationReport` names those
+features for exactly that reason.
 """
 
 from __future__ import annotations
@@ -62,12 +62,12 @@ __all__ = [
     "CLUSTER_COLUMNS",
     "LINKAGE_COLUMNS",
     "Cluster",
-    "PruneReport",
+    "CorrelationReport",
     "aggregate_units",
     "cluster_features",
+    "collapse_correlated",
     "correlation_distance",
     "linkage_table",
-    "prune_features",
 ]
 
 #: Column order of the cluster membership table.
@@ -97,8 +97,8 @@ class Cluster:
 
 
 @dataclass(frozen=True)
-class PruneReport:
-    """What pruning collapsed, in enough detail to put in a run manifest."""
+class CorrelationReport:
+    """What this stage collapsed, in enough detail to put in a run manifest."""
 
     aggregate_by: tuple[str, ...]
     units: int
@@ -130,7 +130,7 @@ class PruneReport:
         )
         filled = "" if self.fill_missing == "none" else ", missing values filled"
         lines = [
-            f"pruned {self.features} to {self.kept} feature(s), one per cluster",
+            f"collapsed {self.features} to {self.kept} feature(s), one per cluster",
             f"  |r| >= {self.threshold:g} on median profiles over {unit}{filled}",
             f"  {self.linkage} linkage cut at distance {1 - self.threshold:g}, keeping the "
             f"{self.representative} member of each cluster",
@@ -331,11 +331,11 @@ def linkage_table(tree: np.ndarray, features: Sequence[str]) -> pd.DataFrame:
 # ------------------------------------------------------------------------------ stage
 
 
-def prune_features(
+def collapse_correlated(
     config: Config,
     frame: pd.DataFrame,
     features: Sequence[str],
-) -> tuple[list[str], pd.DataFrame, pd.DataFrame, PruneReport]:
+) -> tuple[list[str], pd.DataFrame, pd.DataFrame, CorrelationReport]:
     """Cluster `features` by correlation and keep one representative per cluster.
 
     Returns the kept features in the input's own order, the cluster membership table, the
@@ -345,7 +345,7 @@ def prune_features(
     import pandas as pd
 
     features = list(features)
-    spec = config.prune
+    spec = config.correlation
     units = aggregate_units(
         frame, features, spec.aggregate_by, fill_missing=spec.fill_missing
     )
@@ -386,7 +386,7 @@ def prune_features(
     )
     sizes = np.array([cluster.size for cluster in clusters])
     values = units.to_numpy(dtype=np.float64)
-    report = PruneReport(
+    report = CorrelationReport(
         aggregate_by=tuple(spec.aggregate_by),
         units=len(units),
         fill_missing=spec.fill_missing,

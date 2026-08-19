@@ -1,9 +1,9 @@
-"""Golden regression for correlation pruning, against the published pruned list.
+"""Golden regression for the correlation stage, against the published representatives list.
 
 The published run's own output for this stage was never a small file, so the check is made
 against the *composition* of the list instead of against the list itself. HCS-proc's feature
-categorization step is run on exactly this stage's output - the pruned list, before the
-missing-data filter its dimension-reduction step applies - and every bar segment of the
+categorization step is run on exactly this stage's output - the representatives list, before
+the missing-data filter its dimension-reduction step applies - and every bar segment of the
 published figure is labelled with its count. That makes the figure a 4 x 7 table of counts,
 transcribed here as `fixtures/published_categories_all_days.tsv`.
 
@@ -14,9 +14,9 @@ published". Reproducing the count and the composition takes the same list.
 Needs `data/all_days_trimmed_features.txt` - the published run's own selected-and-trimmed
 subset, 1.4 GB, from https://doi.org/10.5281/zenodo.17951792. Starting from that file rather
 than from the raw table isolates this stage: its 182 feature columns are the published
-selection, and its values are already trimmed, so anything that fails here is pruning.
+selection, and its values are already trimmed, so anything that fails here is this stage.
 
-    CDR_FS_GOLDEN=1 pytest tests/test_golden_prune.py -v
+    CDR_FS_GOLDEN=1 pytest tests/test_golden_correlation.py -v
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from cases import METADATA_PATTERNS, write_config
 from tests_support import feature_list
 
 from cdr_fs.config import load_config
-from cdr_fs.prune import prune_features
+from cdr_fs.correlation import collapse_correlated
 from cdr_fs.schema import read_header, read_table, resolve_schema
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -85,9 +85,9 @@ ORGANELLE_OF = {
 
 
 @pytest.fixture(scope="module")
-def pruned(tmp_path_factory):
-    """Run the pruning stage once, on the published trimmed subset."""
-    directory = tmp_path_factory.mktemp("golden-prune")
+def collapsed(tmp_path_factory):
+    """Run the correlation stage once, on the published trimmed subset."""
+    directory = tmp_path_factory.mktemp("golden-correlation")
     config = load_config(
         write_config(
             directory,
@@ -96,7 +96,7 @@ def pruned(tmp_path_factory):
                 # The input is already trimmed; trimming it again would trim a trim.
                 "trim.enabled": "false",
                 "trim.scope": None,
-                "prune.aggregate_by": "Metadata_Day,Metadata_Biorep,Metadata_Well",
+                "correlation.aggregate_by": "Metadata_Day,Metadata_Biorep,Metadata_Well",
             },
             table=INPUT,
         )
@@ -106,7 +106,7 @@ def pruned(tmp_path_factory):
     frame = read_table(
         INPUT, config.input.sep, metadata=schema.metadata, features=schema.features
     )
-    kept, clusters, tree, report = prune_features(config, frame, schema.features)
+    kept, clusters, tree, report = collapse_correlated(config, frame, schema.features)
     return {
         "features": schema.features,
         "kept": kept,
@@ -119,23 +119,23 @@ def pruned(tmp_path_factory):
     }
 
 
-def test_the_input_is_the_published_selection(pruned):
+def test_the_input_is_the_published_selection(collapsed):
     """Sanity check on the file: its feature columns are the 182 the published run selected."""
-    assert set(pruned["features"]) == set(feature_list(SELECTED))
-    assert len(pruned["features"]) == EXPECTED["features_in"]
+    assert set(collapsed["features"]) == set(feature_list(SELECTED))
+    assert len(collapsed["features"]) == EXPECTED["features_in"]
 
 
-def test_the_published_number_of_clusters_is_reproduced(pruned):
-    report = pruned["report"]
+def test_the_published_number_of_clusters_is_reproduced(collapsed):
+    report = collapsed["report"]
     assert report.features == EXPECTED["features_in"]
     assert report.units == EXPECTED["units"]
     assert report.kept == EXPECTED["kept"]
     assert report.singletons == EXPECTED["singletons"]
     assert report.largest == EXPECTED["largest"]
-    assert len(pruned["kept"]) == EXPECTED["kept"]
+    assert len(collapsed["kept"]) == EXPECTED["kept"]
 
 
-def test_the_published_composition_is_reproduced(pruned):
+def test_the_published_composition_is_reproduced(collapsed):
     """The real gate: the same features, category by category and organelle by organelle."""
     lookup = pd.read_csv(CATEGORIES, sep="\t", comment="#", dtype=str).fillna("")
     lookup = {row.feature: (row.category, row.organelle) for row in lookup.itertuples()}
@@ -145,7 +145,7 @@ def test_the_published_composition_is_reproduced(pruned):
 
     counts = pd.DataFrame(0, index=published.index, columns=published.columns)
     unplaced = []
-    for feature in pruned["kept"]:
+    for feature in collapsed["kept"]:
         category, organelle = lookup.get(feature, ("", ""))
         column, row = CATEGORY_OF.get(category), ORGANELLE_OF.get(organelle)
         if column is None or row is None:
@@ -160,36 +160,38 @@ def test_the_published_composition_is_reproduced(pruned):
     )
 
 
-def test_treating_the_object_indices_as_metadata_lands_on_the_published_list(pruned):
+def test_treating_the_object_indices_as_metadata_lands_on_the_published_list(collapsed):
     """The route `examples/published.ini` takes: 175 -> 97 -> 95.
 
     `Number_Object_Number` is CellProfiler's within-image object label. Seven of its eight
     columns passed the concentration-response gate, and the published run carried them through
-    pruning and then removed them by name downstream. Declaring them metadata instead removes
-    them here - and they turn out to form exactly two pure clusters of the 99, one of four
-    members and one of three, so nothing else about the clustering changes.
+    the correlation stage and then removed them by name downstream. Declaring them metadata
+    instead removes them here - and they turn out to form exactly two pure clusters of the 99,
+    one of four members and one of three, so nothing else about the clustering changes.
 
     What comes out is 95 features: 94 `rp_norm_*` plus `counts_RelateLysoCell`, which is the
     length and the composition of the published retained list. The two features the published
     run also struck out by hand are in it, and survive on their own merits.
     """
-    from cdr_fs.subset import subset_table
+    from cdr_fs.missing_data import restrict_table
 
-    labels = [name for name in pruned["features"] if "Number_Object_Number" in name]
+    labels = [name for name in collapsed["features"] if "Number_Object_Number" in name]
     assert len(labels) == 7
     # All seven sit in clusters made only of labels, so removing them removes whole clusters.
-    clusters = pruned["clusters"]
+    clusters = collapsed["clusters"]
     label_clusters = set(clusters.loc[clusters["feature"].isin(labels), "cluster"])
     members = clusters[clusters["cluster"].isin(label_clusters)]
     assert sorted(members.drop_duplicates("cluster")["size"]) == [3, 4]
     assert set(members["feature"]) == set(labels)
 
-    measurements = [name for name in pruned["features"] if name not in set(labels)]
-    kept, _, _, report = prune_features(pruned["config"], pruned["frame"], measurements)
+    measurements = [name for name in collapsed["features"] if name not in set(labels)]
+    kept, _, _, report = collapse_correlated(
+        collapsed["config"], collapsed["frame"], measurements
+    )
     assert (report.features, report.kept) == (175, 97)
 
-    _, _, final = subset_table(
-        pruned["frame"], pruned["metadata"], kept, drop_missing=True, max_missing=30
+    _, _, final = restrict_table(
+        collapsed["frame"], collapsed["metadata"], kept, drop_missing=True, max_missing=30
     )
     assert final.kept == 95
     surviving = set(kept) - {name for name, _ in final.dropped}

@@ -1,19 +1,23 @@
-"""Apply a feature list back to the object-level table.
+"""Write the final table: a feature list applied back to the object-level data.
 
-The last step of a run: take the features that survived - from `select`, or from `prune` when
-it is enabled - and write the input table restricted to them, with the configured trim
-applied. That file is what a downstream analysis consumes, and it is the only stage whose
-output is data rather than evidence.
+This stage does two things, and its name is the second of them:
 
-Two scripts in the original pipeline did this, identical but for which list they read and
-where they wrote; one stage with an explicit list argument replaces both.
+1. **Apply the feature list.** Take the features that survived - from `select`, or from
+   `correlation` when it is enabled - and write the input table restricted to them, with the
+   configured trim applied. This is the last step of a run and the only stage whose output is
+   data rather than evidence: that file is what a downstream analysis consumes.
+2. **Drop the features that are too empty**, which is the filter the stage is named for.
+
+Two scripts in the original pipeline did the first, identical but for which list they read
+and where they wrote; one stage with an explicit list argument replaces both.
 
 ## The missing-data filter
 
-Trimming removes values rather than rows, so the subset is not a rectangle of data: a feature
-can be missing for most objects and still be present as a column. `[subset] drop_missing`
-removes the columns that are too empty to be worth carrying - a feature missing
-`[subset] max_missing` percent of the table **or more** is dropped, 30% by default.
+Trimming removes values rather than rows, so the final table is not a rectangle of data: a
+feature can be missing for most objects and still be present as a column.
+`[missing_data] drop_missing` removes the columns that are too empty to be worth carrying - a
+feature missing `[missing_data] max_missing` percent of the table **or more** is dropped, 30%
+by default.
 
 Where it is applied matters as much as the threshold. It runs here, over the **whole** table,
 before anything downstream subsamples: one decision for the whole experiment, so a feature is
@@ -23,11 +27,11 @@ incomparable - and it is what the original pipeline did, in its dimension-reduct
 
 ## Excluding a feature by name
 
-`[subset] exclude` lists exact feature names to leave out, whatever else says about them. It
-is the escape hatch for a judgement no rule expresses - a feature known to be an artifact of
-this assay, a channel that was mis-set on one plate - and it is deliberately exact names
-rather than patterns, because a regex that quietly matches a second feature is the wrong tool
-for a decision made one feature at a time. A name that matches nothing is warned about by
+`[missing_data] exclude` lists exact feature names to leave out, whatever else says about
+them. It is the escape hatch for a judgement no rule expresses - a feature known to be an
+artifact of this assay, a channel that was mis-set on one plate - and it is deliberately exact
+names rather than patterns, because a regex that quietly matches a second feature is the wrong
+tool for a decision made one feature at a time. A name that matches nothing is warned about by
 `cdr-fs check`: the failure mode is that the feature stays in and nobody notices.
 
 Everything else is left alone and reported rather than filtered. A constant feature or one
@@ -44,7 +48,7 @@ from typing import TYPE_CHECKING, Sequence
 if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
 
-__all__ = ["QUALITY_COLUMNS", "SubsetReport", "read_feature_list", "subset_table"]
+__all__ = ["QUALITY_COLUMNS", "MissingDataReport", "read_feature_list", "restrict_table"]
 
 #: Column order of the per-feature quality table.
 QUALITY_COLUMNS = (
@@ -59,8 +63,8 @@ QUALITY_COLUMNS = (
 
 
 @dataclass(frozen=True)
-class SubsetReport:
-    """What the subset contains, what was filtered out of it, and what is thin inside it."""
+class MissingDataReport:
+    """What the final table contains, what was filtered out of it, and what is thin in it."""
 
     rows: int
     requested: int
@@ -70,7 +74,7 @@ class SubsetReport:
     absent: tuple[str, ...]
     #: Removed by the missing-data filter, with the fraction of the table each was missing.
     dropped: tuple[tuple[str, float], ...]
-    #: Removed because `[subset] exclude` named them.
+    #: Removed because `[missing_data] exclude` named them.
     excluded: tuple[str, ...]
     drop_missing: bool
     max_missing: float
@@ -93,7 +97,7 @@ class SubsetReport:
 
     def summary(self) -> str:
         lines = [
-            f"subset {self.rows:,} row(s) x {self.kept} feature(s)",
+            f"final table: {self.rows:,} row(s) x {self.kept} feature(s)",
             f"  {self.values_present:,} of {self.values_total:,} feature values present "
             f"({self.fraction_present:.2%})",
         ]
@@ -144,7 +148,7 @@ def read_feature_list(path: str | Path) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def subset_table(
+def restrict_table(
     frame: pd.DataFrame,
     metadata: Sequence[str],
     features: Sequence[str],
@@ -152,13 +156,13 @@ def subset_table(
     drop_missing: bool = False,
     max_missing: float = 30.0,
     exclude: Sequence[str] = (),
-) -> tuple[pd.DataFrame, pd.DataFrame, SubsetReport]:
+) -> tuple[pd.DataFrame, pd.DataFrame, MissingDataReport]:
     """Restrict `frame` to `metadata` plus whichever of `features` it actually has.
 
     `exclude` names features to leave out whatever their quality, and with `drop_missing` a
     feature missing `max_missing` percent of the rows or more is left out too. Columns come out
     in the table's own order rather than the list's, so that two lists over the same table give
-    column-comparable files. Returns the subset, a per-feature quality table covering every
+    column-comparable files. Returns the final table, a per-feature quality table covering every
     matched feature including the ones removed, and a report.
     """
     import numpy as np
@@ -207,12 +211,12 @@ def subset_table(
         columns=list(QUALITY_COLUMNS),
     )
     kept = list(quality.loc[~quality["dropped"], "feature"])
-    subset = frame[[column for column in frame.columns if column in set(metadata)] + kept]
+    final = frame[[column for column in frame.columns if column in set(metadata)] + kept]
 
     surviving = quality[~quality["dropped"]]
     order = surviving["nonmissing_fraction"].to_numpy().argsort(kind="stable")
     missing = quality[quality["drop_reason"] == "missing"]
-    report = SubsetReport(
+    report = MissingDataReport(
         rows=len(frame),
         requested=len(requested),
         matched=len(matched),
@@ -234,4 +238,4 @@ def subset_table(
             if surviving["nonmissing_fraction"].iloc[index] < 1.0
         ),
     )
-    return subset, quality, report
+    return final, quality, report

@@ -39,13 +39,13 @@ rejected for the same reason.
 | `select` | `slope_positive` | `any` | positive linear slope on `any` or `all` strata |
 | | `nonconstant` | `all` | constant model beaten on `any` or `all` strata |
 | | `strata` | *(all present)* | which strata the rule is applied over |
-| `prune` | `enabled` | *required* | |
+| `correlation` | `enabled` | *required* | |
 | | `threshold` | `0.9` | on \|r\|; features are clustered by `1 - |r|` |
 | | `linkage` | `average` | `average`, `complete` or `single` |
 | | `representative` | `alphabetical` | which member of a cluster to keep — `alphabetical` or `first` |
 | | `aggregate_by` | *(`[trim] scope`)* | columns identifying one experimental unit; correlations are computed between unit medians. Explicitly empty correlates the object rows as they are |
 | | `fill_missing` | `column_mean` | `column_mean` or `none` — see [Collapsing redundant features](method-notes.md#collapsing-redundant-features) |
-| `subset` | `drop_missing` | *required* | drop features too empty to carry; a filter on the output must be stated |
+| `missing_data` | `drop_missing` | *required* | drop features too empty to carry; a filter on the output must be stated |
 | | `max_missing` | `30` | percent; a feature missing this much of the table **or more** is dropped |
 | | `exclude` | *(empty)* | exact feature names to leave out of the final table, whatever else says |
 | `output` | `dir` | *required* | where results are written |
@@ -101,7 +101,7 @@ rp_norm_Number_Object_Number_*      CellProfiler's object index -> metadata
 biological content, but it *does* respond to exposure — the number of objects per image changes
 with dose, which shifts the index distribution, which moves the earth mover's distance. Seven of
 its eight columns passed the concentration-response gate in the published run and two survived
-correlation pruning; the pipeline removed them by name at the very end. Declaring them metadata
+correlation collapsing; the pipeline removed them by name at the very end. Declaring them metadata
 is the same decision made where it belongs, and `examples/published.ini` does. Nothing in the
 tool guesses this for you: only a pattern you write keeps a label out of the analysis.
 
@@ -154,5 +154,4 @@ themselves, and it is NaN for any dose below 1.
 - [Describing your experiment](experiment-design.md) — which of these keys state facts about the experiment
 - [Method notes](method-notes.md) — pooling, collapsing, dropping, and the figures
 - [Reproducing the published run](reproducing.md) — the four checks against the published outputs
-- [Tests](testing.md) — what the suite protects, and how to run the golden regressions
 - [README](../README.md) — the method, the stages and an example run

@@ -23,7 +23,7 @@ quantifiers — and can be left alone while you get the first twelve right.
 | `[trim] scope` | the columns identifying one physical unit of the assay |
 | `[emd] contrasts` | which comparisons the design supports |
 | `[select] strata` | which strata the run covers — see the warning below |
-| `[prune] aggregate_by` | the columns identifying one experimental unit for correlation |
+| `[correlation] aggregate_by` | the columns identifying one experimental unit for correlation |
 
 `[fit] models` sits between the two: it is a method choice, but the design constrains it,
 because a curve needs more points than it has parameters.
@@ -41,8 +41,8 @@ None of it is required to exist. What changes is what you can ask.
 | **five exposure levels** | `[fit] models = BC4,LL4,WB1.4,Lin,Con` | BC5. Five points cannot identify five parameters |
 | **three or four levels** | `[fit] models = Lin,Con` | Every sigmoid. You are asking whether a line beats a flat line — still a question, but not concentration–response modelling |
 | **two levels** | — | This design cannot be run: `[select]` requires both `Lin` and `Con`, and `Lin` needs three points |
-| **no need to trim** | `[trim] enabled = false` | Nothing, except that `[prune] aggregate_by` no longer has `[trim] scope` to default to, so set it explicitly |
-| **no wish to prune** | `[prune] enabled = false` | The redundancy collapse. `cdr-fs subset` then applies `selected.txt` instead of `pruned.txt`, and says which it used |
+| **no need to trim** | `[trim] enabled = false` | Nothing, except that `[correlation] aggregate_by` no longer has `[trim] scope` to default to, so set it explicitly |
+| **no wish to collapse correlated features** | `[correlation] enabled = false` | The redundancy collapse. `cdr-fs missing_data` then applies `selected.txt` instead of `representatives.txt`, and says which it used |
 
 Two of these deserve spelling out.
 
@@ -69,9 +69,9 @@ exposure axis     10 is the LOWEST exposure, 2 the highest   (11.3683 -> 1000)
 Read it against your own plate map. It is the one place the tool states what it believes
 about the direction of your experiment.
 
-**`[prune] aggregate_by` must name a unit that varies along the exposure axis.**
+**`[correlation] aggregate_by` must name a unit that varies along the exposure axis.**
 Correlations are computed between unit medians, so if each unit spans the whole dilution
-series then every unit looks alike and pruning collapses nothing. In the published plate
+series then every unit looks alike and the stage collapses nothing. In the published plate
 layout one well holds one concentration, which is why `Metadata_Day,Metadata_Biorep,
 Metadata_Well` works there; if your wells each hold a whole series, add the level column.
 The report line `|r| >= 0.9 on median profiles over N unit(s) of …` is where you check that
@@ -98,9 +98,9 @@ enabled = false
 baseline = none
 [fit]
 [select]
-[prune]
+[correlation]
 enabled = false
-[subset]
+[missing_data]
 drop_missing = false
 [output]
 dir = /PATH/TO/results
@@ -135,10 +135,16 @@ One more, because it surprises people: **`[select] strata` narrows the whole run
 the selection.** `emd` and `fit` read it too, so setting it to one stratum means the distance
 table holds only that stratum, with nothing in the file to say it is partial.
 
+And one that bites only afterwards, when you read the stage tables back into an analysis of
+your own: **an experiment with no `[schema] group_by` has one stratum, and its label is the
+empty string.** Written to a delimited file that is an empty field, and `pandas.read_csv` reads
+an empty field as `NaN` whatever dtype it is given; `groupby` then drops it, taking the whole
+table with it. Read those tables with `cdr_fs.schema.read_stage_table`, which fills the field
+back to the empty string it was, as every stage already does.
+
 ## See also
 
 - [Configuration](configuration.md) — every key, its default and its meaning
 - [Method notes](method-notes.md) — pooling, collapsing, dropping, and the figures
 - [Reproducing the published run](reproducing.md) — the four checks against the published outputs
-- [Tests](testing.md) — what the suite protects, and how to run the golden regressions
 - [README](../README.md) — the method, the stages and an example run

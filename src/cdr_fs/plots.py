@@ -2,11 +2,11 @@
 
 Nothing here computes a distance, fits a model or clusters a feature. Every figure is a view
 of a file: `emd.tsv` and `fit.tsv` for the fit panels, `emd_baseline.tsv` for the
-reproducibility floor, `prune_linkage.tsv` and `prune_clusters.tsv` for the dendrogram. That
-is the whole point of the split - in the original pipeline one function fitted, accumulated
-results and drew, so a figure could disagree with the table beside it and nothing would
-notice. Here a figure that disagrees with its table is impossible, because the table is
-where the figure comes from.
+reproducibility floor, `correlation_linkage.tsv` and `correlation_clusters.tsv` for the
+dendrogram. That is the whole point of the split - in the original pipeline one function
+fitted, accumulated results and drew, so a figure could disagree with the table beside it and
+nothing would notice. Here a figure that disagrees with its table is impossible, because the
+table is where the figure comes from.
 
 Three figures:
 
@@ -16,7 +16,7 @@ Three figures:
 * **Distance distribution** - every distance of a table, per feature, features ordered by
   median. Run on `emd_baseline.tsv` it is the between-replicate reproducibility floor; run
   on `emd.tsv` it is the treatment distances to read against that floor.
-* **Dendrogram** - the tree correlation pruning cut, with the cut drawn on it.
+* **Dendrogram** - the tree the correlation stage cut, with the cut drawn on it.
 
 ## Curves are drawn through the fitted points, not on a dense grid
 
@@ -376,9 +376,9 @@ def plot_dendrogram(
     dpi: int = 300,
     default_colour: str = "gray",
 ) -> Path:
-    """Draw the tree that correlation pruning cut, from `prune_linkage.tsv`.
+    """Draw the tree the correlation stage cut, from `correlation_linkage.tsv`.
 
-    Pass `prune_clusters.tsv` as `clusters` to colour each cluster of at least `min_coloured`
+    Pass `correlation_clusters.tsv` as `clusters` to colour each cluster of at least `min_coloured`
     members - links and leaf labels alike, and consistently with each other. Both come from
     the same run, so the colours are the clustering rather than a redrawing of it: a link is
     coloured only when every leaf below it belongs to one cluster.

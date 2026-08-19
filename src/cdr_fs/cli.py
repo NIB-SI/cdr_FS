@@ -91,23 +91,31 @@ def _build_parser() -> argparse.ArgumentParser:
     select = _add(subparsers, "select", "apply the retention rule to the fitted models")
     select.set_defaults(handler=_select)
 
-    prune = _add(
-        subparsers, "prune", "collapse near-redundant features by correlation (optional)"
+    correlation = _add(
+        subparsers,
+        "correlation",
+        "collapse near-redundant features by correlation (optional)",
     )
-    prune.set_defaults(handler=_prune)
+    correlation.set_defaults(handler=_correlation)
 
-    subset = _add(
-        subparsers, "subset", "write the input table restricted to the retained features"
+    # The help opens on the table because the stage name does not: `missing_data` names the
+    # filter this stage applies, but its product is the final data table, and a reader
+    # scanning `--help` for "where does my output come from" has to land here.
+    missing_data = _add(
+        subparsers,
+        "missing_data",
+        "write the final table - the input restricted to the retained features, minus "
+        "those missing too much data",
     )
-    subset.add_argument(
+    missing_data.add_argument(
         "--features",
         metavar="FILE",
         help=(
-            "feature list to apply, one name per line; defaults to the pruned list when "
-            "[prune] is enabled and the selected list otherwise"
+            "feature list to apply, one name per line; defaults to the representatives list "
+            "when [correlation] is enabled and the selected list otherwise"
         ),
     )
-    subset.set_defaults(handler=_subset)
+    missing_data.set_defaults(handler=_missing_data)
 
     plot = _add(subparsers, "plot", "draw the diagnostic figures from the tables written so far")
     plot.add_argument(
@@ -250,36 +258,40 @@ def _describe(config: Config) -> list[str]:
             if config.select.strata
             else "(every stratum present in the data)",
         ),
-        "[prune]",
-        _field("enabled", str(config.prune.enabled).lower()),
+        "[correlation]",
+        _field("enabled", str(config.correlation.enabled).lower()),
     ]
-    if config.prune.enabled:
+    if config.correlation.enabled:
         lines += [
-            _field("threshold", f"|r| >= {config.prune.threshold:g}"),
-            _field("linkage", config.prune.linkage),
-            _field("representative", config.prune.representative),
+            _field("threshold", f"|r| >= {config.correlation.threshold:g}"),
+            _field("linkage", config.correlation.linkage),
+            _field("representative", config.correlation.representative),
             _field(
                 "aggregate_by",
-                ", ".join(config.prune.aggregate_by)
-                if config.prune.aggregate_by
+                ", ".join(config.correlation.aggregate_by)
+                if config.correlation.aggregate_by
                 else "(none - the rows are correlated as they are)",
             ),
-            _field("fill_missing", config.prune.fill_missing),
+            _field("fill_missing", config.correlation.fill_missing),
         ]
-    lines += ["[subset]", _field("drop_missing", str(config.subset.drop_missing).lower())]
-    if config.subset.drop_missing:
+    lines += [
+        "[missing_data]",
+        _field("drop_missing", str(config.missing_data.drop_missing).lower()),
+    ]
+    if config.missing_data.drop_missing:
         lines.append(
             _field(
                 "max_missing",
-                f"{config.subset.max_missing:g}%  (a feature missing this much of the "
+                f"{config.missing_data.max_missing:g}%  (a feature missing this much of the "
                 f"table or more is dropped)",
             )
         )
     lines.append(
         _field(
             "exclude",
-            f"{len(config.subset.exclude)}: {_abbreviate(config.subset.exclude, limit=4)}"
-            if config.subset.exclude
+            f"{len(config.missing_data.exclude)}: "
+            f"{_abbreviate(config.missing_data.exclude, limit=4)}"
+            if config.missing_data.exclude
             else "(none)",
         )
     )
@@ -530,14 +542,14 @@ def _select(args: argparse.Namespace) -> int:
     return 0
 
 
-def _prune(args: argparse.Namespace) -> int:
-    from cdr_fs.prune import prune_features
-    from cdr_fs.subset import read_feature_list
+def _correlation(args: argparse.Namespace) -> int:
+    from cdr_fs.correlation import collapse_correlated
+    from cdr_fs.missing_data import read_feature_list
 
     config = load_config(args.config)
-    if not config.prune.enabled:
+    if not config.correlation.enabled:
         print(
-            "error: [prune] enabled is false, so there is nothing to do",
+            "error: [correlation] enabled is false, so there is nothing to do",
             file=sys.stderr,
         )
         return 3
@@ -549,20 +561,23 @@ def _prune(args: argparse.Namespace) -> int:
         )
     features = read_feature_list(selected)
     if not features:
-        print(f"error: {selected.name} is empty, so there is nothing to prune", file=sys.stderr)
+        print(
+            f"error: {selected.name} is empty, so there is nothing to collapse",
+            file=sys.stderr,
+        )
         return 3
     frame, _ = _prepare(config)
 
-    kept, clusters, tree, report = prune_features(config, frame, features)
+    kept, clusters, tree, report = collapse_correlated(config, frame, features)
     print(report.summary())
-    _write(config, clusters, "prune_clusters")
-    _write(config, tree, "prune_linkage")
-    _write_list(config, kept, "pruned")
+    _write(config, clusters, "correlation_clusters")
+    _write(config, tree, "correlation_linkage")
+    _write_list(config, kept, "representatives")
     return 0
 
 
-def _subset(args: argparse.Namespace) -> int:
-    from cdr_fs.subset import read_feature_list, subset_table
+def _missing_data(args: argparse.Namespace) -> int:
+    from cdr_fs.missing_data import read_feature_list, restrict_table
 
     config = load_config(args.config)
     if args.features:
@@ -570,11 +585,12 @@ def _subset(args: argparse.Namespace) -> int:
         if not source.is_file():
             raise ConfigError(f"--features file not found: {source}")
     else:
-        stage = "pruned" if config.prune.enabled else "selected"
-        source = _list_path(config, stage)
+        enabled = config.correlation.enabled
+        source = _list_path(config, "representatives" if enabled else "selected")
         if not source.exists():
             raise ConfigError(
-                f"{source} is missing - run `cdr-fs {'prune' if config.prune.enabled else 'select'}"
+                f"{source} is missing - run `cdr-fs "
+                f"{'correlation' if enabled else 'select'}"
                 f" -c {config.path}` first, or name a list with --features"
             )
     print(f"applying {source.name}")
@@ -582,21 +598,26 @@ def _subset(args: argparse.Namespace) -> int:
     features = read_feature_list(source)
     if not features:
         # Otherwise the output is a metadata-only table, which looks like a result.
-        print(f"error: {source.name} is empty, so there is nothing to subset", file=sys.stderr)
+        print(
+            f"error: {source.name} is empty, so there are no features to write",
+            file=sys.stderr,
+        )
         return 3
     frame, resolved = _prepare(config)
-    subset, quality, report = subset_table(
+    final, quality, report = restrict_table(
         frame,
         resolved.metadata,
         features,
-        drop_missing=config.subset.drop_missing,
-        max_missing=config.subset.max_missing,
-        exclude=config.subset.exclude,
+        drop_missing=config.missing_data.drop_missing,
+        max_missing=config.missing_data.max_missing,
+        exclude=config.missing_data.exclude,
     )
     print(report.summary())
 
-    name = f"subset_{source.stem}"
-    _write(config, subset, name)
+    # Named for the list applied, not just for the stage: two lists over one table are a
+    # normal thing to run, and they must not overwrite each other's output.
+    name = f"final_{source.stem}"
+    _write(config, final, name)
     _write(config, quality, f"{name}_features")
     _write_list(config, list(quality.loc[~quality["dropped"], "feature"]), f"{name}_retained")
     return 0
@@ -605,9 +626,9 @@ def _subset(args: argparse.Namespace) -> int:
 def _plot(args: argparse.Namespace) -> int:
     import pandas as pd
 
+    from cdr_fs.missing_data import read_feature_list
     from cdr_fs.plots import plot_dendrogram, plot_distribution, plot_fit_panels
     from cdr_fs.schema import read_stage_table
-    from cdr_fs.subset import read_feature_list
 
     config = load_config(args.config)
     wanted = FIGURES
@@ -677,18 +698,21 @@ def _plot(args: argparse.Namespace) -> int:
             skipped.append(f"{name} - needs {source}{extension} (run `cdr-fs emd`)")
 
     if "dendrogram" in wanted:
-        tree, clusters = available("prune_linkage"), available("prune_clusters")
+        tree = available("correlation_linkage")
+        clusters = available("correlation_clusters")
         if tree:
             draw("dendrogram", lambda: [
                 plot_dendrogram(
                     pd.read_csv(tree, sep=config.input.sep),
                     results / "dendrogram.png",
-                    cut=1.0 - config.prune.threshold,
+                    cut=1.0 - config.correlation.threshold,
                     clusters=read(clusters) if clusters else None,
                 )
             ])
         else:
-            skipped.append("dendrogram - needs prune_linkage (run `cdr-fs prune`)")
+            skipped.append(
+                "dendrogram - needs correlation_linkage (run `cdr-fs correlation`)"
+            )
 
     for path in drawn:
         print(f"wrote {path}  ({_human_bytes(path.stat().st_size)})")

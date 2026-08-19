@@ -161,7 +161,7 @@ def select_features(
         retained.append(feature)
 
     # Order the output by the input's feature order rather than alphabetically: it is what
-    # `prune` breaks ties on, so it must not depend on how the fit table happened to sort.
+    # `correlation` breaks ties on, so it must not depend on how the fit table happened to sort.
     order = {feature: index for index, feature in enumerate(dict.fromkeys(fit_table["feature"]))}
     retained.sort(key=lambda feature: order[feature])
 
