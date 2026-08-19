@@ -56,7 +56,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from cdr_fs.config import Config
 
-__all__ = ["COLUMNS", "FitReport", "fit_series", "series_from_emd"]
+__all__ = ["COLUMNS", "FitReport", "axis_positions", "fit_series", "series_from_emd"]
 
 #: Column order of the fit table.
 COLUMNS = (
@@ -126,8 +126,13 @@ def _listing(names: Sequence[str], limit: int = 3) -> str:
     return shown if len(names) <= limit else f"{shown}, +{len(names) - limit} more"
 
 
-def _axis(config: Config) -> dict[str, float]:
-    """Level label -> x position, following `[fit] x_scale`."""
+def axis_positions(config: Config) -> dict[str, float]:
+    """Level label -> x position, following `[fit] x_scale`.
+
+    Public because `plots` needs the same axis the fit used: a series with a missing point
+    must still be drawn against the full exposure axis, or the gap closes up and the panel
+    reads as a complete series.
+    """
     levels = config.design.fitted_levels
     if config.fit.x_scale == "rank":
         return {level: float(index) for index, level in enumerate(levels)}
@@ -143,7 +148,7 @@ def series_from_emd(config: Config, emd_table: pd.DataFrame):
     """
     import numpy as np
 
-    axis = _axis(config)
+    axis = axis_positions(config)
     wanted = {
         f"{config.design.control}v{level}": level for level in config.design.fitted_levels
     }
@@ -211,8 +216,16 @@ def fit_series(
                     result.bic,
                     result.aic_plus_bic,
                     result.slope,
+                    # repr, not a fixed number of significant digits: it is the shortest
+                    # string that reads back as the same float, and the parameters have to
+                    # read back exactly. The models evaluate `log(x + 1e-10)`, so a fitted
+                    # `e` can settle a hair above -1e-10, where the guard makes the argument
+                    # of the logarithm a very small positive number. Rounding such a value to
+                    # six digits collapses it onto -1e-10 exactly, the logarithm becomes
+                    # -inf, and the curve degenerates to something that has nothing to do
+                    # with the AIC stored beside it. It happened to 6% of fits.
                     ",".join(
-                        f"{name}={value:.6g}"
+                        f"{name}={value!r}"
                         for name, value in zip(
                             MODEL_PARAMETER_NAMES[model], result.parameters
                         )

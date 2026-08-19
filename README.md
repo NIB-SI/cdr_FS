@@ -4,9 +4,9 @@ Selects morphological features in high-content screening by fitting
 concentration/dose–response models to earth mover's distance scores between control and
 treated cell populations.
 
-> **Status: under construction.** Every stage runs except the diagnostic plots. See
-> [Status](#status) for what works today and [Reproducing the published
-> run](#reproducing-the-published-run) for which published numbers come back.
+> **Status: every stage runs.** What is left is the release work — wider tests, docs, a tagged
+> version. See [Reproducing the published run](#reproducing-the-published-run) for which
+> published numbers come back.
 
 ## The method
 
@@ -55,7 +55,7 @@ prose uses the en dash; the package itself is plain lowercase `cdr_fs`.
 | Retention rule | `select.py` | done |
 | Correlation pruning (optional) | `prune.py` | done |
 | Applying a selected list to the data | `subset.py` | done |
-| Diagnostic plots | `plots.py` | not started |
+| Diagnostic figures | `plots.py` | done |
 
 Working today:
 
@@ -68,6 +68,7 @@ cdr-fs fit   -c config.ini          # fit the six models to each distance series
 cdr-fs select -c config.ini         # apply the retention rule
 cdr-fs prune -c config.ini          # collapse near-redundant features   (optional)
 cdr-fs subset -c config.ini         # write the table restricted to what survived
+cdr-fs plot  -c config.ini          # draw the figures from whatever tables exist
 ```
 
 Every stage that needs cell-level data reads `[input] table` and applies the configured
@@ -83,9 +84,10 @@ Each stage reads the previous one's output from `[output] dir` under a stable na
 | `fit` | `fit.tsv` |
 | `select` | `selected.txt`; `select_evidence.tsv` — per feature and stratum, which model won, by how much, and what the linear slope was |
 | `prune` | `pruned.txt`; `prune_clusters.tsv` — every feature with its cluster and how far it sits from the representative; `prune_linkage.tsv` — the tree and its leaf order, so the dendrogram can be drawn without recomputing a correlation |
+| `plot` | `fit_<stratum>_part_<n>.png` — the fit panels; `emd.png` and `emd_baseline.png` — the distance distributions; `dendrogram.png` — the tree pruning cut |
 | `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and whether the missing-data filter dropped it; `subset_<list>_retained.txt` — the features that survived, one per line |
 
-`cdr-fs run` exists in `--help` and refuses to run, naming what is missing. The nine original
+`cdr-fs run`, which would chain the stages, exists in `--help` and refuses to run. The nine original
 scripts are kept unmodified in [`legacy/`](legacy/README.md) as the reference each rewritten
 module is checked against; that directory disappears when the last of them has been
 reproduced.
@@ -264,6 +266,32 @@ than the threshold suggests.** On the reference dataset the 83 dropped features 
 sits at 0.215, which is `|r|` = 0.785. That is what chaining does, and it is why
 `prune_clusters.tsv` records the distance for every member rather than only the cluster
 number: it is the column to look at before trusting one feature to speak for a group.
+
+## The figures
+
+`cdr-fs plot` draws three things, from the tables the other stages wrote and never by
+recomputing anything:
+
+- **Fit panels** — one panel per feature and stratum, with the distance points, the six fitted
+  curves and a legend ordered by information criterion. This is the figure the article's
+  Figure 4 was composed from. `--grid N` sets panels per row and column, `--features FILE`
+  restricts which features are drawn; without it a full run is several hundred pages.
+- **Distance distributions** — every distance in a table, one column of points per feature,
+  features ordered by median, on a broken axis (linear below a split, logarithmic above). On
+  `emd_baseline.tsv` this is the between-replicate reproducibility floor; on `emd.tsv` it is
+  the treatment distances to read against that floor.
+- **Dendrogram** — the tree correlation pruning cut, with the cut drawn on it and each cluster
+  of three or more members coloured.
+
+A curve in a fit panel is the fitted function evaluated at the exposure levels and joined up,
+as the published figures show it. The `fit.tsv` parameters are written at full precision so a
+drawn curve reproduces the AIC printed beside it — which is asserted, and which fails for about
+one fit in sixteen if the parameters are rounded to six digits, because a fitted inflection can
+settle right against the `log(x + 1e-10)` guard.
+
+The dendrogram colours links and leaf labels from the same cluster table, so a coloured subtree
+is a cluster. The original drew the tree with one linkage method and cut it with another, so
+its colours were only approximately the clustering.
 
 ## Dropping features with too little data
 

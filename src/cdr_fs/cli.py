@@ -28,6 +28,9 @@ PENDING = {
 
 _EXTENSIONS = {"tab": ".tsv", "comma": ".csv", "semicolon": ".csv"}
 
+#: `cdr-fs plot --only` names, and what each figure needs to exist.
+FIGURES = ("fits", "emd", "baseline", "dendrogram")
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
@@ -111,6 +114,33 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     subset.set_defaults(handler=_subset)
+
+    plot = _add(subparsers, "plot", "draw the diagnostic figures from the tables written so far")
+    plot.add_argument(
+        "--only",
+        metavar="FIGURE",
+        help=(
+            "comma-separated subset of: "
+            + ", ".join(FIGURES)
+            + "; the default draws whichever the available tables allow"
+        ),
+    )
+    plot.add_argument(
+        "--grid",
+        type=int,
+        default=3,
+        metavar="N",
+        help="fit panels per row and column of a page (default 3, so 9 per page)",
+    )
+    plot.add_argument(
+        "--features",
+        metavar="FILE",
+        help=(
+            "restrict the fit panels to this feature list; the default draws every feature "
+            "in the distance table, which on a full run is hundreds of pages"
+        ),
+    )
+    plot.set_defaults(handler=_plot)
 
     for command, description in PENDING.items():
         pending = _add(subparsers, command, f"{description} [not yet implemented]")
@@ -547,6 +577,94 @@ def _subset(args: argparse.Namespace) -> int:
     _write(config, subset, name)
     _write(config, quality, f"{name}_features")
     _write_list(config, list(quality.loc[~quality["dropped"], "feature"]), f"{name}_retained")
+    return 0
+
+
+def _plot(args: argparse.Namespace) -> int:
+    import pandas as pd
+
+    from cdr_fs.plots import plot_dendrogram, plot_distribution, plot_fit_panels
+    from cdr_fs.subset import read_feature_list
+
+    config = load_config(args.config)
+    wanted = FIGURES
+    if args.only:
+        wanted = tuple(part.strip() for part in args.only.split(",") if part.strip())
+        unknown = [name for name in wanted if name not in FIGURES]
+        if unknown:
+            raise ConfigError(
+                f"--only names unknown figure(s): {', '.join(unknown)}\n"
+                f"  available: {', '.join(FIGURES)}"
+            )
+
+    results = Path(config.output.dir)
+    extension = _EXTENSIONS[config.input.sep_keyword]
+
+    def available(name: str):
+        target = results / f"{name}{extension}"
+        return target if target.exists() else None
+
+    features = None
+    if args.features:
+        source = Path(args.features)
+        if not source.is_file():
+            raise ConfigError(f"--features file not found: {source}")
+        features = read_feature_list(source)
+
+    drawn: list[Path] = []
+    skipped: list[str] = []
+    read = lambda target: pd.read_csv(  # noqa: E731 - one expression, used four times
+        target, sep=config.input.sep, dtype={"feature": str, "stratum": str}
+    )
+
+    if "fits" in wanted:
+        distances, fits = available("emd"), available("fit")
+        if distances and fits:
+            pages = plot_fit_panels(
+                config,
+                read(distances),
+                read(fits),
+                results,
+                grid=args.grid,
+                features=features,
+            )
+            drawn.extend(pages)
+        else:
+            skipped.append("fits - needs emd and fit (run `cdr-fs fit`)")
+
+    for name, source, title in (
+        ("emd", "emd", "Distances from the control, per feature"),
+        ("baseline", "emd_baseline", "Between-replicate control distances, per feature"),
+    ):
+        if name not in wanted:
+            continue
+        target = available(source)
+        if target:
+            drawn.append(plot_distribution(read(target), results / f"{source}.png", title=title))
+        else:
+            skipped.append(f"{name} - needs {source}{extension} (run `cdr-fs emd`)")
+
+    if "dendrogram" in wanted:
+        tree, clusters = available("prune_linkage"), available("prune_clusters")
+        if tree:
+            drawn.append(
+                plot_dendrogram(
+                    pd.read_csv(tree, sep=config.input.sep),
+                    results / "dendrogram.png",
+                    cut=1.0 - config.prune.threshold,
+                    clusters=read(clusters) if clusters else None,
+                )
+            )
+        else:
+            skipped.append("dendrogram - needs prune_linkage (run `cdr-fs prune`)")
+
+    for path in drawn:
+        print(f"wrote {path}  ({_human_bytes(path.stat().st_size)})")
+    for note in skipped:
+        print(f"skipped {note}", file=sys.stderr)
+    if not drawn:
+        print("error: nothing to draw", file=sys.stderr)
+        return 3
     return 0
 
 
