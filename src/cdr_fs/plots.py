@@ -254,8 +254,10 @@ def plot_distribution(
     the distribution is heavy enough that one scale hides either the bulk or the tail. `split`
     defaults to the `SPLIT_PERCENTILE`th percentile of the finite distances.
 
-    Run on the baseline table this is the between-replicate reproducibility floor - the
-    yardstick a treatment distance has to clear.
+    The same function draws either contrast set, because they are the same view of the same
+    quantity: on `emd.tsv` the distances from the control to each exposure level, on
+    `emd_baseline.tsv` the distances between control replicates - the reproducibility floor the
+    first has to clear.
     """
     import numpy as np
     from matplotlib.figure import Figure
@@ -264,10 +266,27 @@ def plot_distribution(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    absent = [column for column in ("feature", "emd") if column not in table.columns]
+    if absent:
+        raise ValueError(
+            f"the distance table has no {' or '.join(absent)} column; it has "
+            f"{', '.join(map(str, table.columns))}"
+        )
+
     values = table["emd"].to_numpy(dtype=np.float64)
     finite = values[np.isfinite(values)]
+    # An empty figure is worse than an error: it looks like a result. Refuse it, and say which
+    # of the two ways the table was empty, since they have different causes - no rows at all
+    # usually means the table was filtered down to nothing on the way in.
+    if not len(table):
+        raise ValueError("the distance table has no rows, so there is nothing to plot")
+    if not finite.size:
+        raise ValueError(
+            f"none of the {len(table):,} distances in the table are finite, so there is "
+            f"nothing to plot"
+        )
     if split is None:
-        split = float(np.percentile(finite, SPLIT_PERCENTILE)) if finite.size else 1.0
+        split = float(np.percentile(finite, SPLIT_PERCENTILE))
 
     medians = table.groupby("feature")["emd"].median().sort_values()
     position = {feature: index for index, feature in enumerate(medians.index)}
@@ -302,25 +321,20 @@ def plot_distribution(
         lower.set_xticks(range(len(position)))
         lower.set_xticklabels(list(medians.index), rotation=90, fontsize=4.2 * scale)
         lower.tick_params(axis="x", pad=1)
-        lower.set_xlabel("Features", fontsize=14 * scale, labelpad=10)
     else:
         lower.set_xticks([])
-        figure.text(0.5, 0.02, "Features", fontsize=12 * scale, ha="center", va="center")
     for axes in (upper, lower):
         axes.tick_params(axis="y", labelsize=14 * scale)
 
-    figure.text(
-        0.01,
-        0.5,
-        f"EMD score (linear below {split:.3g}, log above)",
-        fontsize=14 * scale,
-        ha="left",
-        va="center",
-        rotation="vertical",
+    # supylabel rather than a hand-placed figure.text: the label belongs to both panels, and
+    # placing it by hand puts it on top of the upper panel's tick labels at some figure sizes.
+    figure.supylabel(
+        f"EMD score  (linear below {split:.3g}, log above)", fontsize=13 * scale
     )
+    figure.supxlabel("Features", fontsize=13 * scale)
     if title:
-        figure.suptitle(title, fontsize=16 * scale, y=0.98)
-    figure.subplots_adjust(left=0.06, top=0.95, bottom=0.15, right=0.99)
+        figure.suptitle(title, fontsize=16 * scale)
+    figure.subplots_adjust(left=0.08, top=0.94, bottom=0.15, right=0.99)
     figure.savefig(path, dpi=dpi, bbox_inches="tight")
     return path
 

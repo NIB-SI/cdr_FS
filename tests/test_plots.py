@@ -170,6 +170,34 @@ def test_the_distribution_splits_its_axis_at_a_percentile(tmp_path):
     assert path.exists() and path.stat().st_size > 0
 
 
+def test_an_empty_distance_table_is_refused_rather_than_drawn(tmp_path):
+    """A blank figure looks like a result, which is worse than an error.
+
+    The way this happens in practice is a table filtered down to nothing on the way in - the
+    baseline contrast set is between replicates, not between exposure levels, so anything that
+    selects rows by exposure level empties it completely.
+    """
+    table = emd_table(["f0"])
+    with pytest.raises(ValueError, match="no rows"):
+        plot_distribution(table.iloc[0:0], tmp_path / "emd.png")
+
+    table["emd"] = np.nan
+    with pytest.raises(ValueError, match="none of the 8 distances"):
+        plot_distribution(table, tmp_path / "emd.png")
+
+    with pytest.raises(ValueError, match="no emd column"):
+        plot_distribution(table.drop(columns=["emd"]), tmp_path / "emd.png")
+
+
+def test_either_contrast_set_draws_the_same_way(tmp_path):
+    """The baseline set pairs replicates rather than levels; the figure does not care."""
+    baseline = emd_table(["f0", "f1"])
+    baseline["contrast"] = "BR1vBR2"
+    baseline["group_a"], baseline["group_b"] = "BR1", "BR2"
+    path = plot_distribution(baseline, tmp_path / "baseline.png", figsize=(6, 4), dpi=40)
+    assert path.exists() and path.stat().st_size > 0
+
+
 def test_the_distribution_tolerates_non_finite_distances(tmp_path):
     table = emd_table(["f0", "f1"])
     table.loc[table.index[:3], "emd"] = [np.nan, np.inf, -np.inf]
