@@ -201,6 +201,45 @@ a five-parameter model fitted to eight points is at the edge of what AIC/BIC com
 supports. It also changes the numbers, so it no longer reproduces the article. Both are
 available; the default reproduces the paper.
 
+## Which run is "published"?
+
+There are two, and they differ. This matters because "the defaults reproduce the published
+run" is the invariant the whole extraction rests on, so it has to be said which run.
+
+* **The article's run** — archived as HCS-proc release
+  [`v1`](https://doi.org/10.5281/zenodo.17949848).
+* **The corrected pipeline** — HCS-proc `main`, which carries two changes made after
+  publication:
+  * BC4 was implemented as `c + (d-c)/(1+exp(...))`, which is algebraically the
+    four-parameter log-logistic — a duplicate of LL4. The six-model comparison was really
+    five distinct models. It is now the true Brain–Cousens form, whose `f * x` term is what
+    makes it a hormesis model.
+  * The highest exposure is withheld from curve fitting, so the series is eight points
+    rather than nine, keeping concentration-response detection inside the sub-cytotoxic
+    window.
+
+`examples/published.ini` follows **the corrected pipeline**, because that is what the
+inherited scripts do. Both changes alter which features survive selection — deliberately, as
+the HCS-proc commit messages state.
+
+What that means for each stage:
+
+| Stage | Status against the published output |
+|---|---|
+| EMD | **Reproduced exactly.** Neither correction touches this stage, so it matches release `v1`'s own EMD tables: 16,946 + 11,292 distances, every population size equal. |
+| Selection | Reproduces the **corrected** pipeline, and yields 199 features. The article reports 182, which belongs to the uncorrected run. |
+
+The 182 is not yet accounted for, and it is worth being straight about that rather than
+tuning until a number matches. Restoring both pre-correction behaviours moves *away* from
+it — the article's BC4 with all nine contrasts gives 292 — and no combination of the
+retention rule's quantifiers reaches it either (`any`/`any` 444, `any`/`all` 199, `all`/`any`
+273, `all`/`all` 153). The article's sentence is also "182 of the 781 features extracted per
+cell", and 781 is the CellProfiler extraction count, before the illogical and correlated
+Haralick features were removed upstream; the table that actually enters selection carries
+471. So the figure may not be a 471-in count at all. Settling it needs the published
+`model_fit_results.txt`, which would show row by row whether the difference is in the
+fitting or in the rule.
+
 ## Scope
 
 **In:** the schema declaration, optional trimming, contrast definition, the EMD
