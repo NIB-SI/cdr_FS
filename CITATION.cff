@@ -39,7 +39,7 @@ preferred-citation:
     Effects in RTgill-W1 Cells
   notes: >-
     M.T. and B.J. contributed equally to this work. The
-    concentration-response feature selection generalised by cdr_FS is
+    concentration-response feature selection that cdr_FS implements is
     described in this article.
   authors:
     - given-names: Miha

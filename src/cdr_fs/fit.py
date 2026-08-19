@@ -21,12 +21,22 @@ take `log(x)`, and `log(affine(rank))` is not `affine(log(rank))`. Fitted to a r
 is a perfect logistic in log-dose, `x_scale = dose` recovers it exactly while `rank` does
 not - AIC -298 against -41 on an eight-point series.
 
-Only `Lin` and `Con` are genuinely invariant, being affine in x, and the sign of the linear
-slope - which is what the retention rule tests - is preserved under any increasing
-reparameterisation. So the published rank axis leaves the slope half of the rule untouched
-and makes the sigmoid models fit less well than a dose axis would, which makes the
-"constant model is not best" half marginally harder to pass. It is the conservative choice
-rather than a wrong one, and it is the default because it is what was published.
+`Lin` and `Con` keep their *shape* under the change, being affine in x. Their fitted
+parameters do not, and neither in general does the sign of the linear slope, which is what
+the retention rule tests: a least-squares slope is `cov(x, y) / var(x)`, and re-spacing x
+changes that covariance. Two things keep it stable in practice. For a series that rises
+monotonically with exposure - the case the rule is looking for - the sign is positive on
+any increasing axis. And for a geometric dilution the two sigmoid axes coincide exactly:
+`log(dose)` is an affine map of `rank`, evenly spaced, so nothing moves at all. Where they
+do part company is `Lin` under `x_scale = dose`, because the linear model takes no
+logarithm and so sees raw concentration, which is exponential in rank; on arbitrary
+eight-point series the two axes then disagree in sign about one time in seven.
+
+So the published rank axis leaves the slope half of the rule alone for any feature that
+actually responds, and makes the sigmoid models fit less well than a dose axis would, which
+makes the "constant model is not best" half marginally harder to pass. It is the
+conservative choice rather than a wrong one, and it is the default because it is what was
+published.
 
 ## Incomplete series are not fitted
 

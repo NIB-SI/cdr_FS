@@ -3,8 +3,8 @@
 Two things are being pinned here. First, the arithmetic: for shifted uniform samples the
 Wasserstein distance is the shift, which is checkable by hand. Second, and more
 importantly, the *pairing* - which populations get compared, what happens when one of them
-does not exist, and what pooling does. The pairing is where a generalised engine earns its
-keep, because the original scripts hardcoded it.
+does not exist, and what pooling does. The pairing is what the original scripts hardcoded,
+so it is what has to be read from the configuration now.
 
 These configurations deliberately do not describe the RTgill-W1 design: three levels, no
 time axis in some cases, renamed columns. If the engine only worked on the published shape,

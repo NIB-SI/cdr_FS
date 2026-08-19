@@ -19,7 +19,7 @@ feature. Enumerate the QC columns individually instead.
 
 `ResolvedSchema.prefix_breakdown` exists to make that class of mistake visible: it
 groups the resolved features by leading name token, so `counts_ -> 2` shows up next to
-`rp_ -> 469` in the output of `cdr-fs check`.
+`rp_ -> 461` in the output of `cdr-fs check`.
 
 `read_stage_table` is the other reader here: it reads back the tables the stages write,
 rather than the input table, and exists because one of their columns does not survive a
@@ -74,10 +74,11 @@ class ResolvedSchema:
     def prefix_breakdown(self, separator: str = "_") -> list[tuple[str, int]]:
         """Feature counts grouped by leading name token, largest group first.
 
-        A quick sanity check on the split: the published table resolves to
-        `[("rp_", 469), ("counts_", 2)]`, which is the intended 471 and shows at a glance
-        that the two organelle counts stayed on the feature side rather than being
-        swallowed by a `^counts_` metadata pattern.
+        A quick sanity check on the split: under `examples/published.ini` the published
+        table resolves to `[("rp_", 461), ("counts_", 2)]`, the intended 463, and shows at
+        a glance that the two organelle counts stayed on the feature side rather than being
+        swallowed by a `^counts_` metadata pattern. Without the pattern that declares the
+        object-index columns metadata the same table gives 469 + 2 = 471.
         """
         counts: dict[str, int] = {}
         for feature in self.features:

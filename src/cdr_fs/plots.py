@@ -67,8 +67,9 @@ MODEL_COLOURS = {
 
 #: Where the distribution figure's linear panel gives way to a logarithmic one, as a
 #: percentile of the distances plotted. The published figure split at a hand-picked 7, which
-#: is the 83rd percentile of both published tables (7.6 and 6.6) - so this is that choice
-#: generalised rather than a constant that only suits one dataset.
+#: is the 83rd percentile of both published tables (7.6 and 6.6). Carrying the percentile
+#: rather than the 7 at least rescales with the data; it is still one number read off one
+#: experiment.
 SPLIT_PERCENTILE = 83.0
 
 #: Inches per fit panel, and how many leaves an inch of dendrogram carries. Both as published.

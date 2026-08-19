@@ -1,9 +1,9 @@
-"""Gate 3a: the same code, a structurally different experiment.
+"""The same code, a structurally different experiment.
 
 Every other test in this suite is shaped by the RTgill-W1 design - four days, nine
-concentrations, `Metadata_*` columns, tab-separated. That leaves one claim untested, and
-it is the claim the whole package rests on: that the design comes from the configuration
-and from nothing else.
+concentrations, `Metadata_*` columns, tab-separated. That leaves one property of the code
+unchecked, and it is the one the configuration file exists for: that the design comes from
+the configuration and from nothing else.
 
 `reshape.py` builds a table that shares its *values* with the published one and none of
 its *structure*: no time axis, five exposure levels instead of nine, level labels that do
@@ -20,8 +20,8 @@ Two bugs came out of writing it, and both are regression-tested below:
 * `prune` on an empty feature list raised `IndexError` out of the clustering, because zero
   features had been treated as one empty cluster rather than as no clusters at all.
 
-What this does **not** show is biological generality. It is one dataset in two shapes, not
-two datasets.
+This says nothing about whether the method carries to another experiment. It is one dataset
+in two shapes, not two datasets.
 """
 
 from __future__ import annotations

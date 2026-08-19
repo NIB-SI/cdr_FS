@@ -1,12 +1,17 @@
 # cdr_FS — feature selection by concentration/dose–response model fitting
 
-Selects morphological features in high-content screening by fitting
-concentration/dose–response models to earth mover's distance scores between control and
-treated cell populations.
+A method, and a working implementation of it. For each morphological feature, measure how
+far its distribution moves away from the control as exposure rises; then keep the features
+where a concentration–response curve describes that movement better than a flat line does.
+The distance is the earth mover's (Wasserstein) distance between cell populations, and the
+curves are six standard concentration–response models ranked by AIC and BIC.
 
-> **Status: every stage runs.** What is left is the release work — wider tests, docs, a tagged
-> version. See [Reproducing the published run](#reproducing-the-published-run) for which
-> published numbers come back.
+> **Status: every stage runs.** The method was developed for, and has been applied to, one
+> dataset — the RTgill-W1 screen of [Tome et al. 2026](#origin). The experimental design is
+> read from a configuration file rather than written into the code, and that is tested; it
+> is a statement about the code, not evidence that the method carries to another organism,
+> assay or chemistry. [Reproducing the published run](#reproducing-the-published-run) says
+> which published numbers come back and how. Still to do: a tagged release.
 
 ## The method
 
@@ -28,19 +33,23 @@ describes better than a flat line?**
 4. Optionally collapse the survivors by correlation, keeping one representative per
    cluster of near-redundant features, and drop any that are left too sparse to use.
 
-Using distributions rather than per-well means is the point: it detects a subpopulation
-shifting while the population mean stays put, which is what subcytotoxic exposure tends to
-look like.
+Using distributions rather than per-well means is the point: a subpopulation can shift
+while the population mean stays put, and a distance between distributions registers that
+where a difference of means does not. That is the effect the article set out to find at
+subcytotoxic exposures, and it is why the method is built on distances rather than on
+summaries.
 
 ### Why `cdr_FS`
 
 **c**oncentration/**d**ose **r**esponse **F**eature **S**election.
 
 The slash is deliberate. *Concentration–response* is the ecotoxicology term and
-*dose–response* the pharmacological one for the same idea, and the method needs neither
-field's assumptions — it applies to any ordered exposure series, including drug-discovery
-screens. Machine-read fields (`pyproject.toml`, package metadata) use a plain hyphen and
-prose uses the en dash; the package itself is plain lowercase `cdr_fs`.
+*dose–response* the pharmacological one for the same idea, and the name commits to neither.
+What the code asks of an experiment is an ordered exposure series and a control; whether
+that series is a dilution in a fish-gill assay or something else entirely is not a thing it
+inspects, and not a thing it has been tried on. Machine-read fields (`pyproject.toml`,
+package metadata) use a plain hyphen and prose uses the en dash; the package itself is plain
+lowercase `cdr_fs`.
 
 ## Status
 
@@ -50,14 +59,14 @@ prose uses the en dash; the package itself is plain lowercase `cdr_fs`.
 | Metadata/feature resolution, table reading | `schema.py` | done |
 | Extreme-value trimming (optional) | `trim.py` | done |
 | Contrast-driven EMD engine | `emd.py` | done |
-| The six models, AIC/BIC | `models.py` | done (lifted verbatim) |
+| The six models, AIC/BIC | `models.py` | done (taken unchanged) |
 | Fitting to a results table | `fit.py` | done |
 | Retention rule | `select.py` | done |
 | Correlation pruning (optional) | `prune.py` | done |
 | Applying a selected list to the data | `subset.py` | done |
 | Diagnostic figures | `plots.py` | done |
 
-Working today:
+The stages, in order:
 
 ```bash
 cdr-fs check -c config.ini          # validate the configuration, report the schema
@@ -73,7 +82,7 @@ cdr-fs plot  -c config.ini          # draw the figures from whatever tables exis
 
 Every stage that needs cell-level data reads `[input] table` and applies the configured
 trim itself, so there is no requirement to materialise a trimmed copy — on the reference
-dataset that copy would be another 3.7 GB. `cdr-fs trim` exists to write it out for
+dataset that copy would be another 3.9 GB. `cdr-fs trim` exists to write it out for
 inspection, not because later stages need it.
 
 Each stage reads the previous one's output from `[output] dir` under a stable name:
@@ -87,9 +96,9 @@ Each stage reads the previous one's output from `[output] dir` under a stable na
 | `plot` | `fit_<stratum>_part_<n>.png` — the fit panels; `emd.png` and `emd_baseline.png` — the distance distributions; `dendrogram.png` — the tree pruning cut |
 | `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and which rule, if any, removed it; `subset_<list>_retained.txt` — the features that survived, one per line |
 
-A stage refuses rather than write an artefact that reads as a result: `fit` will not write a
-table when no series was complete, and `prune` and `subset` will not run on an empty feature
-list. Each exits 3 and says which stage produced the empty input.
+A stage refuses rather than write an artefact that would read as a result: `fit` will not
+write a table when no series was complete, and `prune` and `subset` will not run on an empty
+feature list. Each exits 3 and says what came up empty.
 
 The file names above use `.tsv`; with `[input] sep = comma` they are `.csv`, since the stage
 tables are written with the same separator the input uses. Read them back with
@@ -97,14 +106,16 @@ tables are written with the same separator the input uses. Read them back with
 with no `[schema] group_by` has one stratum whose label is the empty string, and pandas reads
 an empty field as `NaN` — which `groupby` then drops, taking the whole table with it.
 
-`cdr-fs run`, which would chain the stages, exists in `--help` and refuses to run.
+There is no single command that chains the stages. Run them in the order above; each
+reports what it did and refuses when its input is not there yet.
 
 The nine scripts this package was extracted from were carried along in a `legacy/` directory
 while each one was reproduced and checked. All nine now are, so that directory is gone; the
 scripts remain in this repository's history, and in
 [HCS-proc](https://github.com/NIB-SI/HCS-proc)'s `scripts/feature_selection/` as the published
-record. `models.py` was `git mv`'d from the script holding the model functions, so
-`git log --follow` on it reaches the original author's history.
+record. `models.py` was extracted from the script holding the model functions in the commit that
+removed it; git does not score that as a rename, so the original author's history is reached
+through the old path — `git log --oneline -- legacy/plots_emd_model_drc.py`.
 
 ## Installation
 
@@ -124,7 +135,8 @@ reasoning behind each value in its comments; start by copying it.
 
 `.ini` carries no type information, so every value is parsed and cross-checked before any
 data is read. A wrong configuration fails in the first second with a message naming the
-section, the key and the fix, rather than producing plausible-looking wrong numbers. All
+section, the key and — where there is one to name — the fix, rather than producing
+plausible-looking wrong numbers. All
 ten sections must be present even when every key in them is left at its default, so that
 a mistyped section name is an error instead of a silent fall-back; unknown keys are
 rejected for the same reason.
@@ -167,7 +179,7 @@ rejected for the same reason.
 Three things this configuration makes explicit that were previously implicit in the
 scripts:
 
-- **The metadata list.** It lived in three hardcoded copies; now one pattern list drives
+- **The metadata list.** It lived as a literal in five scripts, in two versions; now one drives
   every stage. Because the split is by inversion, a new measured channel needs no
   configuration change — but see the warning below.
 - **The two halves of the retention rule.** They use *different* quantifiers: a positive
@@ -230,7 +242,7 @@ is not the axis you supplied. For the reference dilution series:
 
 ```
 x_scale = rank  ->  log(x) = [-23.03, 0, 0.69, 1.10, 1.39, 1.61, 1.79, 1.95]
-x_scale = dose  ->  log(x) = [  2.99, 3.55, 4.11, 4.67, 5.23, 5.79, 6.35, 6.91]
+x_scale = dose  ->  log(x) = [  2.43, 2.99, 3.55, 4.11, 4.67, 5.23, 5.79, 6.35]
                              spacing 0.559616 throughout - exactly even
 ```
 
@@ -245,9 +257,15 @@ choice dominates, because the two halves of the retention rule want different th
 
 `rank` suits the **linear** model, because for a geometric series the rank *is* log-dose up to
 an affine shift - and the linear slope is what the retention rule tests the sign of. `dose`
-suits the **sigmoids**, which become proper log-logistic curves in concentration. The sign of
-the linear slope is positive either way, so the slope test is unaffected by the choice; what
-changes is how easily a sigmoid beats the constant model.
+suits the **sigmoids**, which become proper log-logistic curves in concentration. What changes
+most is how easily a sigmoid beats the constant model.
+
+The slope test is not strictly invariant either, though it is close enough to be. A
+least-squares slope is `cov(x, y)/var(x)`, so re-spacing x changes it — and `Lin` takes no
+logarithm, which means `x_scale = dose` hands it raw concentration, exponential in rank rather
+than affine to it. On arbitrary eight-point series the two axes then disagree about the sign
+one time in seven. For a series that rises monotonically with exposure, which is the case the
+rule exists to find, the sign is positive on either axis.
 
 `rank` stays the default because it is what was published. Switch to `dose` when the exposure
 series is not geometrically spaced - rank is then not a transform of log-dose at all, and the
@@ -256,6 +274,132 @@ dose vector, so `x_scale = dose` works there with no further edits.
 
 There is deliberately no `log_dose`: it would hand `log(dose)` to models that take a logarithm
 themselves, and it is NaN for any dose below 1.
+
+## Describing your experiment
+
+Of the thirty-odd keys across the ten sections, twelve describe the **experiment**. The
+rest describe the **method** — thresholds, which models to fit, linkage, the two
+quantifiers — and can be left alone while you get the first twelve right.
+
+| Key | The fact about the experiment it states |
+|---|---|
+| `[schema] metadata_patterns` | where the boundary between bookkeeping and measurement lies |
+| `[schema] condition` | which column carries each object's exposure level |
+| `[schema] group_by` | the one stratification factor — day, cell line, plate. Empty means a single stratum |
+| `[schema] pool_over` | which column is the replicate axis. Empty means no replicate structure |
+| `[design] control` | which label is the unexposed arm. Exactly one |
+| `[design] levels` | the ordered exposure axis, **low to high**. This order *is* the response axis |
+| `[design] dose` | the actual exposure magnitudes, index-matched to `levels` — the spacing, not just the order |
+| `[design] exclude_from_fit` | levels measured but outside the regime the curve should describe |
+| `[trim] scope` | the columns identifying one physical unit of the assay |
+| `[emd] contrasts` | which comparisons the design supports |
+| `[select] strata` | which strata the run covers — see the warning below |
+| `[prune] aggregate_by` | the columns identifying one experimental unit for correlation |
+
+`[fit] models` sits between the two: it is a method choice, but the design constrains it,
+because a curve needs more points than it has parameters.
+
+### When a piece of the design is missing
+
+None of it is required to exist. What changes is what you can ask.
+
+| You have… | Write | What you lose |
+|---|---|---|
+| **no time course** — one batch, one readout | `group_by =` (empty) | Nothing. There is one stratum, and the `any`/`all` quantifiers collapse to the same rule. `[select] strata` must then be empty too, and the tool says so |
+| **a stratification that is not time** — cell line, plate, passage | `group_by = <that column>` | Nothing; no part of the code is time-aware. But strata are never *compared*: one curve is fitted per stratum and the quantifiers combine the verdicts |
+| **no replicates at all** | omit `pool_over`, **and** set `[emd] baseline = none` | The between-replicate reproducibility floor, which is the yardstick the treatment distances are read against. `[emd] per_replicate` also goes. Leaving `baseline` at its default here is an error, and the message names the key to change |
+| **two replicates** | `pool_over = <column>` | Nothing structural — but the floor is then one number per feature and stratum rather than a spread |
+| **five exposure levels** | `[fit] models = BC4,LL4,WB1.4,Lin,Con` | BC5. Five points cannot identify five parameters |
+| **three or four levels** | `[fit] models = Lin,Con` | Every sigmoid. You are asking whether a line beats a flat line — still a question, but not concentration–response modelling |
+| **two levels** | — | This design cannot be run: `[select]` requires both `Lin` and `Con`, and `Lin` needs three points |
+| **no need to trim** | `[trim] enabled = false` | Nothing, except that `[prune] aggregate_by` no longer has `[trim] scope` to default to, so set it explicitly |
+| **no wish to prune** | `[prune] enabled = false` | The redundancy collapse. `cdr-fs subset` then applies `selected.txt` instead of `pruned.txt`, and says which it used |
+
+Two of these deserve spelling out.
+
+**Level labels are opaque strings, and nothing sorts them.** The order in `[design] levels`
+is the exposure axis, whatever the labels look like. The reference dataset's own labels run
+`11, 10, … 2` with `11` the control and `2` the top dose, so its `levels` line reads
+`10,9,8,…,2` — descending as text, ascending in exposure. That is also the quietest way to
+get a wrong answer: a `levels` list written high to low runs to completion, produces an
+identical distance table, negates every linear slope, and retains nothing. The only
+automatic guard is `[design] dose` — when you supply it, the doses must rise along `levels`,
+and a contradiction is refused. **Supply the doses even when you fit on `rank`.** It costs
+one line and it is the only check that can catch a reversed axis.
+
+**`[prune] aggregate_by` must name a unit that varies along the exposure axis.**
+Correlations are computed between unit medians, so if each unit spans the whole dilution
+series then every unit looks alike and pruning collapses nothing. In the published plate
+layout one well holds one concentration, which is why `Metadata_Day,Metadata_Biorep,
+Metadata_Well` works there; if your wells each hold a whole series, add the level column.
+The report line `|r| >= 0.9 on median profiles over N unit(s) of …` is where you check that
+N is what you expected.
+
+### The smallest configuration that runs
+
+Every section must be present. Nearly every key can be left out — except that `[emd]
+baseline` defaults to comparing replicates with each other, so an experiment without them
+has to say so.
+
+```ini
+[input]
+table = /PATH/TO/objects.tsv
+[schema]
+metadata_patterns = ^level$
+condition = level
+[design]
+control = C0
+levels = L1,L2,L3,L4,L5,L6
+[trim]
+enabled = false
+[emd]
+baseline = none
+[fit]
+[select]
+[prune]
+enabled = false
+[subset]
+drop_missing = false
+[output]
+dir = /PATH/TO/results
+```
+
+Six exposure levels, because that is what all six models need; one metadata column, one
+control, everything else defaulted. `cdr-fs check` lists the twenty-odd keys it filled in.
+
+### What the configuration cannot say
+
+Some of these fail loudly. The ones that do not are the ones worth knowing.
+
+**Refused, with a message.** More than one control: `[design] control` is a single label
+and every contrast is control-versus-level, so a vehicle-versus-untreated comparison is
+rejected — as is any other contrast that is not control-versus-level. A two-arm design, as
+above. A level label containing a comma, since `levels` is comma-separated.
+
+**Accepted, and quietly not what you meant.** These have no guard at all:
+
+- **Crossed designs.** One `condition` column and one ordered list, so a chemical A ×
+  chemical B factorial has to be flattened to one label per cell of the grid — and `levels`
+  then imposes a single total order on something two-dimensional. A curve is fitted along
+  whatever order you wrote.
+- **Two stratifications at once.** `group_by` names one column. Day × cell line has to be
+  concatenated upstream into a single column; picking one and ignoring the other runs
+  perfectly well.
+- **Time, or anything else, as a *response*.** `group_by` is a partition, never a covariate.
+  "Does the response grow with exposure time" gets four separate answers and no test of the
+  question that was asked.
+- **Nested replicates.** `pool_over` is one column, so with plates inside batches inside
+  days only one level of that hierarchy is the replicate axis. (`[trim] scope` and
+  `[prune] aggregate_by` do take several columns, but only for their own purposes.)
+- **Paired designs.** The distance is between two independent empirical distributions. There
+  is no pairing mechanism; a per-object identifier is metadata and nothing more.
+- **Direction of effect.** The earth mover's distance is unsigned, so a feature whose values
+  *fall* with exposure is retained exactly like one that rises. "Positive slope" describes
+  the distance growing, not the measurement growing.
+
+One more that surprises people: **`[select] strata` narrows the whole run, not only the
+selection.** `emd` and `fit` read it too, so setting it to one stratum means the distance
+table holds only that stratum, with nothing in the file to say it is partial.
 
 ## Pooling replicates
 
@@ -336,9 +480,10 @@ whereas filtering each subsample separately lets the same feature be present in 
 and absent from another, which makes the resulting sets incomparable.
 
 On the reference dataset the default takes 99 features to 97, dropping two that are missing 47%
-and 95% of their values. The next thinnest surviving feature is missing 13%, so anything from
-14% to 46% gives the same 97 — the threshold sits on a wide plateau rather than on a knife
-edge, which is the useful thing to know about choosing it.
+and 95% of their values. The next thinnest surviving feature is missing 13%, and the rule
+drops at the threshold or above, so every threshold in (13%, 47%] gives the same 97 — it sits
+on a wide plateau rather than on a knife edge, which is the useful thing to know about
+choosing one.
 
 `[subset] exclude` is the other half: exact feature names to leave out whatever their quality —
 the escape hatch for a judgement no rule expresses, such as a feature known to be an artifact of
@@ -355,11 +500,13 @@ about that depends on the analysis, and guessing is worse than saying so.
 ## Reproducing the published run
 
 `examples/published.ini` is the configuration for the dataset the method was published on.
-Every stage that has a published output to check against returns it:
+Four published outputs are checked against, each stage given the published input to the stage
+before it rather than this tool's own output, so that a difference is attributable to the
+stage under test:
 
 | Stage | Published output | Result |
 |---|---|---|
-| `emd` | the two EMD tables — 16,946 treatment and 11,292 baseline distances | every one of the 28,238 population sizes exact, distances within 8.5e-13 relative |
+| `emd` | the two EMD tables — 16,946 treatment and 11,292 baseline distances | both population sizes on every one of the 28,238 rows exact, distances within 8.5e-13 relative |
 | `select` | the two retained feature lists — **182** across all days, **374** on D5 alone | both reproduced as identical sets |
 | `prune` | the all-days list after pruning — **99** features | reproduced, and its composition matches the published categorization across all 4 organelles x 7 measurement families |
 | `subset` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
@@ -408,13 +555,18 @@ code.
 
 **In:** the schema declaration, optional trimming, contrast definition, the EMD
 computation, multi-model fitting with information-criterion ranking, the retention rule
-with explicit quantifiers, per-feature diagnostic panels, optional correlation pruning, and
-a manifest recording the configuration and input hashes.
+with explicit quantifiers, per-feature diagnostic panels, and optional correlation pruning.
+Every stage prints a report of what it measured and what it could not.
 
 **Out:** image quality control, CellProfiler, segmentation, per-object pooling, and
 row/plate standardization — all of which are tied to a particular plate design and belong
 upstream. Also out: UMAP, MMD and Mahalanobis analyses, which consume this tool's output.
 [HCS-proc](https://github.com/NIB-SI/HCS-proc) covers all of those.
+
+And out: any claim about experiments other than the one this was built on. The
+configuration can describe a different design and the code will run it — that is what
+[Describing your experiment](#describing-your-experiment) is about — but running is not
+having been validated, and no second dataset has been through it.
 
 ## Origin
 
@@ -427,26 +579,25 @@ This is an extraction of `scripts/feature_selection/` from
 > <https://doi.org/10.1021/acs.est.5c18316>
 
 The git history of those scripts is preserved here. HCS-proc remains the citable record of
-the published pipeline; this repository generalises one stage of it into a tool that is
-configuration-driven and installable, and that does not assume the RTgill-W1 experimental
-design.
+the published pipeline. This repository takes one stage of it — the concentration-response
+feature selection — and makes it installable and configuration-driven, so that the
+experimental design is declared in a file instead of edited into five scripts.
 
-The design is experiment-agnostic by construction — nothing about days, replicates, wells
-or nine concentrations is hardcoded — but it has so far been exercised on **one**
-experimental design. Structural generality is tested synthetically instead, by re-shaping
-that dataset into a different experiment and running the whole chain on it from
-configuration alone; see [Structural generality](#structural-generality). A second *real*
-dataset has not been run, and nothing here is evidence about a second organism, assay or
-chemistry.
+Nothing about days, replicates, wells or nine concentrations is hardcoded, and that is
+checked rather than asserted: `tests/test_generality.py` runs the whole chain on the same
+data re-shaped into a different experiment, from configuration alone. It is a property of
+the code. The method itself was developed for one dataset and has been applied to one
+dataset — one organism, one assay, one chemistry — and nothing here is evidence about a
+second.
 
 ## Data
 
 The reference dataset is 121 GB in total and lives on Zenodo:
 <https://doi.org/10.5281/zenodo.17951792> (CC-BY-4.0). The single file this tool starts
-from is `cell_ID_pooled_median_row_plate_standardization_cid.txt`, 3.7 GB — the untrimmed,
+from is `cell_ID_pooled_median_row_plate_standardization_cid.txt`, 3.9 GB — the untrimmed,
 row/plate standardized per-cell table, 503,920 cells x 481 columns. It is deliberately
 *untrimmed*: trimming lives in this tool, so a run reproduces that step rather than
-inheriting it. One more file from the same record, `all_days_trimmed_features.txt` (1.4 GB),
+inheriting it. One more file from the same record, `all_days_trimmed_features.txt` (1.5 GB),
 is the published run's own intermediate and is what the pruning gate checks against.
 
 Nothing that large belongs in git. Put it in `data/`, which is ignored; the committed
@@ -459,22 +610,40 @@ suite run without it.
 pytest
 ```
 
-The suite needs no large data. `tests/fixtures/columns_published.txt` carries the real 481
-column names, so the metadata/feature arithmetic is asserted against the published schema
-in CI; trimming is checked against the original per-group `np.nanpercentile` loop as its
-oracle, on data with and without infinities; the EMD engine is exercised on designs that
-deliberately are *not* the RTgill-W1 one; the retention rule and the pruning are checked on
-hand-built cases where the right answer is known by construction; `tests/test_generality.py`
-runs the whole chain on a re-shaped experiment (below); and `tests/cases.py` holds the table
-of misconfigurations that must be rejected, one entry per validation rule.
+Forty-three tests, about twenty seconds, no large data needed. The suite is deliberately
+small: every test in it either backs one of the four numbers above, or pins a boundary that
+a one-character edit would move, or is the regression for a bug that actually happened.
+Tests that re-checked what another test already covered, or that asserted an implementation
+detail rather than a promise, were removed rather than carried into the release.
 
-### Structural generality
+What that leaves, by what it protects:
 
-Every other test is shaped by the RTgill-W1 design, which leaves the package's central claim
-untested: that the experiment comes from the configuration and from nowhere else.
-`tests/reshape.py` therefore rebuilds the committed slice of the published table as a
-different experiment, keeping the measured values and changing every structural choice at
-once:
+- **The reproduction gates**, four of them, described above.
+- **The trim, against its own oracle.** The vectorised implementation is compared value for
+  value with a transcription of the original per-group `np.nanpercentile` loop, on data with
+  and without infinities. This is what lets the published population counts be claimed
+  without the 3.9 GB file.
+- **The boundaries.** The merge cut is exclusive, tested one ULP either side; a constant fit
+  that merely *ties* drops its feature; the missing-data rule drops at the threshold and not
+  above it. Each of these is one character away from a different published number.
+- **The retention rule's asymmetry** — a positive slope on *any* stratum, the constant model
+  beaten on *all* — on a table built so that a feature passes on one and fails on the other.
+- **The `counts_` trap**, from the failing side: a tidy `^counts_` metadata pattern is shown
+  to swallow two features the published run retained.
+- **The configuration**, as one sweep over fifty misconfigurations, each asserting the
+  message a user would have to act on — and, as its counterweight, that the shipped example
+  still validates. Without the second, validation can only ever get stricter until the run
+  this package exists to reproduce stops loading.
+- **The shipped example itself**, resolved against the real 481-column header.
+- **The two bugs that were real**: an unstratified design emptying itself on the way through
+  its own output format, and pruning an empty list raising out of the clustering.
+
+### The design comes from the configuration
+
+Every other test is shaped by the RTgill-W1 design, which leaves one property of the code
+unchecked — that the experiment comes from the configuration and from nowhere else.
+`tests/reshape.py` rebuilds the committed slice of the published table as a different
+experiment, keeping the measured values and changing every structural choice at once:
 
 | | published | re-shaped |
 |---|---|---|
@@ -486,32 +655,35 @@ once:
 | file | tab-separated, metadata first | comma-separated, columns interleaved, rows shuffled |
 | trim | `[p2.5, p97.5]` within day, replicate, well | `[p5, p95]` within batch, sample |
 
-`tests/test_generality.py` runs `check`, `emd`, `fit`, `select`, `prune`, `subset` and `plot`
-over it and asserts the answers are the configured ones — that the fitted axis follows
-`[design] levels` rather than the labels' sort order, that the outputs take the configured
-separator, and that a single unnamed stratum survives every table on disk.
+`tests/test_generality.py` runs `check`, `emd`, `fit`, `select`, `prune`, `subset` and
+`plot` over it and asserts the answers are the configured ones — that the fitted axis
+follows `[design] levels` rather than the labels' sort order, that the outputs take the
+configured separator, and that a single unnamed stratum survives every table on disk.
 
-This is one dataset in two shapes. It is evidence that the code is configuration-driven, and
-it is not evidence of biological generality.
+It found two bugs the day it was written, both of which had gone unnoticed by a suite six
+times this size. That is what it is for. It is one dataset in two shapes: evidence that the
+code reads the design from the configuration, and not evidence about a second experiment.
 
-Two golden regressions compare against the published run itself, so they need the large inputs
-in `data/`. Each skips when its input is absent, and skips when it is present unless you opt
-in, because reading gigabytes takes minutes:
+### The golden regressions
+
+Two of the four gates compare against the published run itself, so they need the large
+inputs in `data/`. Each skips when its input is absent, and skips when it is present unless
+you opt in, because reading gigabytes takes minutes:
 
 ```bash
 CDR_FS_GOLDEN=1 pytest tests/test_golden.py tests/test_golden_prune.py -v
 ```
 
-`test_golden.py` reproduces the published EMD tables from the untrimmed 3.7 GB input: 16,946
-treatment distances and 11,292 baseline distances, every population size matching exactly and
-every distance within 1e-9 relative. Population sizes are the sharper comparison — they are
-integers, so no tolerance can hide a difference, and their matching is what shows the trim step
-was reproduced value for value.
+`test_golden.py` reproduces the published EMD tables from the untrimmed 3.9 GB input: 16,946
+treatment distances and 11,292 baseline distances, both population sizes on every row
+matching exactly and every distance within 1e-9 relative. The population sizes are the
+sharper comparison — they are integers, so no tolerance can hide a difference, and their
+matching is what shows the trim step was reproduced value for value.
 
-`test_golden_prune.py` starts instead from the published run's own selected-and-trimmed subset,
-`all_days_trimmed_features.txt`, which isolates the pruning stage: its 182 feature columns are
-the published selection and its values are already trimmed, so anything that fails there is
-pruning and nothing else.
+`test_golden_prune.py` starts instead from the published run's own selected-and-trimmed
+subset, `all_days_trimmed_features.txt`, which isolates the pruning stage: its 182 feature
+columns are the published selection and its values are already trimmed, so anything that
+fails there is pruning and nothing else.
 
 ## Licence and citation
 

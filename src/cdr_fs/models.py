@@ -1,12 +1,11 @@
 """The six concentration-response models, and their information criteria.
 
-**The formulas in this module are lifted verbatim from the published pipeline**
-(`plots_emd_model_drc.py`, which this file is the direct descendant of - `git log --follow`
-reaches it). They are the core of the method and are deliberately not rewritten,
-reformulated or "improved": every parameterisation, every `1e-10` guard, the `p0` starting
-values, the `maxfev` budget and the AIC/BIC expressions are exactly as they were when the
-article's numbers were produced. What changed is only the surroundings: fitting now returns
-a table instead of drawing into global matplotlib state.
+**The formulas in this module are taken unchanged from the published pipeline**
+(`plots_emd_model_drc.py`, which this file descends from). They are the core of the method
+and are deliberately not rewritten, reformulated or "improved": every parameterisation,
+every `1e-10` guard, the `p0` starting values, the `maxfev` budget and the AIC/BIC
+expressions come from it as they stand. What changed is only the surroundings: fitting now
+returns a table instead of drawing into global matplotlib state.
 
 The set spans the shapes a distance-versus-exposure series can take:
 

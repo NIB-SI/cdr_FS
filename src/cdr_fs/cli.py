@@ -292,7 +292,7 @@ def _describe_schema(config: Config, columns: list[str]) -> list[str]:
             ", ".join(f"{head}* {count}" for head, count in breakdown),
         ),
     ]
-    # Name the members of every small group: the two organelle counts among 469
+    # Name the members of every small group: the two organelle counts among 461
     # rp_norm_* features are exactly the case where a lazy metadata pattern goes wrong.
     for head, count in breakdown:
         if count <= 5:

@@ -1,7 +1,7 @@
 # Test fixtures
 
 Small, committed slices of the published dataset, so the suite runs in CI without the
-3.7 GB table. Neither file is a copy: `columns_published.txt` is a header, `subset.tsv`
+3.9 GB table. Neither file is a copy: `columns_published.txt` is a header, `subset.tsv`
 is a row and column subset.
 
 Provenance for both: `cell_ID_pooled_median_row_plate_standardization_cid.txt` from
