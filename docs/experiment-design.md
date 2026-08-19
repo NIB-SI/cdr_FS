@@ -42,7 +42,7 @@ None of it is required to exist. What changes is what you can ask.
 | **three or four levels** | `[fit] models = Lin,Con` | Every sigmoid. You are asking whether a line beats a flat line — still a question, but not concentration–response modelling |
 | **two levels** | — | This design cannot be run: `[select]` requires both `Lin` and `Con`, and `Lin` needs three points |
 | **no need to trim** | `[trim] enabled = false` | Nothing, except that `[correlation] aggregate_by` no longer has `[trim] scope` to default to, so set it explicitly |
-| **no wish to collapse correlated features** | `[correlation] enabled = false` | The redundancy collapse. `cdr-fs missing_data` then applies `selected.txt` instead of `representatives.txt`, and says which it used |
+| **no wish to collapse correlated features** | `[correlation] enabled = false` | The redundancy collapse. `cdr-fs drop_missing` then applies `selected.txt` instead of `representatives.txt`, and says which it used |
 
 Two of these deserve spelling out.
 
@@ -100,8 +100,8 @@ baseline = none
 [select]
 [correlation]
 enabled = false
-[missing_data]
-drop_missing = false
+[drop_missing]
+enabled = false
 [output]
 dir = /PATH/TO/results
 ```

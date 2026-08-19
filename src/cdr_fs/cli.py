@@ -98,16 +98,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     correlation.set_defaults(handler=_correlation)
 
-    # The help opens on the table because the stage name does not: `missing_data` names the
+    # The help opens on the table because the stage name does not: `drop_missing` names the
     # filter this stage applies, but its product is the final data table, and a reader
     # scanning `--help` for "where does my output come from" has to land here.
-    missing_data = _add(
+    drop_missing = _add(
         subparsers,
-        "missing_data",
+        "drop_missing",
         "write the final table - the input restricted to the retained features, minus "
         "those missing too much data",
     )
-    missing_data.add_argument(
+    drop_missing.add_argument(
         "--features",
         metavar="FILE",
         help=(
@@ -115,7 +115,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "when [correlation] is enabled and the selected list otherwise"
         ),
     )
-    missing_data.set_defaults(handler=_missing_data)
+    drop_missing.set_defaults(handler=_drop_missing)
 
     plot = _add(subparsers, "plot", "draw the diagnostic figures from the tables written so far")
     plot.add_argument(
@@ -275,23 +275,23 @@ def _describe(config: Config) -> list[str]:
             _field("fill_missing", config.correlation.fill_missing),
         ]
     lines += [
-        "[missing_data]",
-        _field("drop_missing", str(config.missing_data.drop_missing).lower()),
+        "[drop_missing]",
+        _field("enabled", str(config.drop_missing.enabled).lower()),
     ]
-    if config.missing_data.drop_missing:
+    if config.drop_missing.enabled:
         lines.append(
             _field(
                 "max_missing",
-                f"{config.missing_data.max_missing:g}%  (a feature missing this much of the "
+                f"{config.drop_missing.max_missing:g}%  (a feature missing this much of the "
                 f"table or more is dropped)",
             )
         )
     lines.append(
         _field(
             "exclude",
-            f"{len(config.missing_data.exclude)}: "
-            f"{_abbreviate(config.missing_data.exclude, limit=4)}"
-            if config.missing_data.exclude
+            f"{len(config.drop_missing.exclude)}: "
+            f"{_abbreviate(config.drop_missing.exclude, limit=4)}"
+            if config.drop_missing.exclude
             else "(none)",
         )
     )
@@ -544,7 +544,7 @@ def _select(args: argparse.Namespace) -> int:
 
 def _correlation(args: argparse.Namespace) -> int:
     from cdr_fs.correlation import collapse_correlated
-    from cdr_fs.missing_data import read_feature_list
+    from cdr_fs.drop_missing import read_feature_list
 
     config = load_config(args.config)
     if not config.correlation.enabled:
@@ -576,8 +576,8 @@ def _correlation(args: argparse.Namespace) -> int:
     return 0
 
 
-def _missing_data(args: argparse.Namespace) -> int:
-    from cdr_fs.missing_data import read_feature_list, restrict_table
+def _drop_missing(args: argparse.Namespace) -> int:
+    from cdr_fs.drop_missing import read_feature_list, restrict_table
 
     config = load_config(args.config)
     if args.features:
@@ -608,9 +608,9 @@ def _missing_data(args: argparse.Namespace) -> int:
         frame,
         resolved.metadata,
         features,
-        drop_missing=config.missing_data.drop_missing,
-        max_missing=config.missing_data.max_missing,
-        exclude=config.missing_data.exclude,
+        drop_missing=config.drop_missing.enabled,
+        max_missing=config.drop_missing.max_missing,
+        exclude=config.drop_missing.exclude,
     )
     print(report.summary())
 
@@ -626,7 +626,7 @@ def _missing_data(args: argparse.Namespace) -> int:
 def _plot(args: argparse.Namespace) -> int:
     import pandas as pd
 
-    from cdr_fs.missing_data import read_feature_list
+    from cdr_fs.drop_missing import read_feature_list
     from cdr_fs.plots import plot_dendrogram, plot_distribution, plot_fit_panels
     from cdr_fs.schema import read_stage_table
 

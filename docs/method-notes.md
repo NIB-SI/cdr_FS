@@ -50,8 +50,8 @@ number: it is the column to look at before trusting one feature to speak for a g
 ## Dropping features from the final table
 
 Trimming removes values rather than rows, so a feature can be missing for most objects and
-still be present as a column. `[missing_data] drop_missing` removes the ones too empty to be worth
-carrying: a feature missing `[missing_data] max_missing` percent of the table **or more** is
+still be present as a column. `[drop_missing] enabled` removes the ones too empty to be worth
+carrying: a feature missing `[drop_missing] max_missing` percent of the table **or more** is
 left out, 30% by default.
 
 It is applied over the **whole** table, before anything downstream subsamples. That is one
@@ -69,7 +69,7 @@ choosing one.
 features. Two chains, two numbers; see [Reproducing the published run](reproducing.md) for why
 there are two.)
 
-`[missing_data] exclude` is the other half: exact feature names to leave out whatever their
+`[drop_missing] exclude` is the other half: exact feature names to leave out whatever their
 quality — the escape hatch for a judgement no rule expresses, such as a feature known to be an
 artifact of one assay. Exact names rather than patterns, because a regex that quietly takes a
 second feature with it is the wrong tool for a decision made one feature at a time; a name that

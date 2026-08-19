@@ -173,7 +173,7 @@ def test_treating_the_object_indices_as_metadata_lands_on_the_published_list(col
     length and the composition of the published retained list. The two features the published
     run also struck out by hand are in it, and survive on their own merits.
     """
-    from cdr_fs.missing_data import restrict_table
+    from cdr_fs.drop_missing import restrict_table
 
     labels = [name for name in collapsed["features"] if "Number_Object_Number" in name]
     assert len(labels) == 7

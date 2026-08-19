@@ -45,7 +45,7 @@ rejected for the same reason.
 | | `representative` | `alphabetical` | which member of a cluster to keep — `alphabetical` or `first` |
 | | `aggregate_by` | *(`[trim] scope`)* | columns identifying one experimental unit; correlations are computed between unit medians. Explicitly empty correlates the object rows as they are |
 | | `fill_missing` | `column_mean` | `column_mean` or `none` — see [Collapsing redundant features](method-notes.md#collapsing-redundant-features) |
-| `missing_data` | `drop_missing` | *required* | drop features too empty to carry; a filter on the output must be stated |
+| `drop_missing` | `enabled` | *required* | drop features too empty to carry; a filter on the output must be stated |
 | | `max_missing` | `30` | percent; a feature missing this much of the table **or more** is dropped |
 | | `exclude` | *(empty)* | exact feature names to leave out of the final table, whatever else says |
 | `output` | `dir` | *required* | where results are written |

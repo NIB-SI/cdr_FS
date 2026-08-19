@@ -15,8 +15,8 @@ and where they wrote; one stage with an explicit list argument replaces both.
 
 Trimming removes values rather than rows, so the final table is not a rectangle of data: a
 feature can be missing for most objects and still be present as a column.
-`[missing_data] drop_missing` removes the columns that are too empty to be worth carrying - a
-feature missing `[missing_data] max_missing` percent of the table **or more** is dropped, 30%
+`[drop_missing] enabled` removes the columns that are too empty to be worth carrying - a
+feature missing `[drop_missing] max_missing` percent of the table **or more** is dropped, 30%
 by default.
 
 Where it is applied matters as much as the threshold. It runs here, over the **whole** table,
@@ -27,7 +27,7 @@ incomparable - and it is what the original pipeline did, in its dimension-reduct
 
 ## Excluding a feature by name
 
-`[missing_data] exclude` lists exact feature names to leave out, whatever else says about
+`[drop_missing] exclude` lists exact feature names to leave out, whatever else says about
 them. It is the escape hatch for a judgement no rule expresses - a feature known to be an
 artifact of this assay, a channel that was mis-set on one plate - and it is deliberately exact
 names rather than patterns, because a regex that quietly matches a second feature is the wrong
@@ -48,7 +48,7 @@ from typing import TYPE_CHECKING, Sequence
 if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
 
-__all__ = ["QUALITY_COLUMNS", "MissingDataReport", "read_feature_list", "restrict_table"]
+__all__ = ["QUALITY_COLUMNS", "DropMissingReport", "read_feature_list", "restrict_table"]
 
 #: Column order of the per-feature quality table.
 QUALITY_COLUMNS = (
@@ -63,7 +63,7 @@ QUALITY_COLUMNS = (
 
 
 @dataclass(frozen=True)
-class MissingDataReport:
+class DropMissingReport:
     """What the final table contains, what was filtered out of it, and what is thin in it."""
 
     rows: int
@@ -74,7 +74,7 @@ class MissingDataReport:
     absent: tuple[str, ...]
     #: Removed by the missing-data filter, with the fraction of the table each was missing.
     dropped: tuple[tuple[str, float], ...]
-    #: Removed because `[missing_data] exclude` named them.
+    #: Removed because `[drop_missing] exclude` named them.
     excluded: tuple[str, ...]
     drop_missing: bool
     max_missing: float
@@ -156,7 +156,7 @@ def restrict_table(
     drop_missing: bool = False,
     max_missing: float = 30.0,
     exclude: Sequence[str] = (),
-) -> tuple[pd.DataFrame, pd.DataFrame, MissingDataReport]:
+) -> tuple[pd.DataFrame, pd.DataFrame, DropMissingReport]:
     """Restrict `frame` to `metadata` plus whichever of `features` it actually has.
 
     `exclude` names features to leave out whatever their quality, and with `drop_missing` a
@@ -216,7 +216,7 @@ def restrict_table(
     surviving = quality[~quality["dropped"]]
     order = surviving["nonmissing_fraction"].to_numpy().argsort(kind="stable")
     missing = quality[quality["drop_reason"] == "missing"]
-    report = MissingDataReport(
+    report = DropMissingReport(
         rows=len(frame),
         requested=len(requested),
         matched=len(matched),

@@ -16,7 +16,7 @@ stage under test:
 | `emd` | the two EMD tables — 16,946 treatment and 11,292 baseline distances | both population sizes on every one of the 28,238 rows exact, distances agreeing to 8.5e-13 relative, against an asserted tolerance of 1e-9 |
 | `select` | the two retained feature lists — **182** across all days, **374** on D5 alone | both reproduced as identical sets |
 | `correlation` | the all-days list after the correlation stage — **99** features | reproduced, and its composition matches the published categorization across all 4 organelles x 7 measurement families |
-| `missing_data` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
+| `drop_missing` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
 
 The selection gate runs off the published fit table, so it isolates the retention rule from
 the curve fitting; `tests/test_golden_selection.py` needs only a 1 MB committed fixture and
@@ -50,12 +50,12 @@ same rules give **463 features → 175 after selection → 97 after the correlat
 **The last step of the published route moved, and it lands in the same place.** The pipeline
 dropped features with 30% or more missing values while building the subsets for its
 dimension-reduction analyses: *per day-subset*, downstream of the selection, along with two
-features excluded by hand. `cdr-fs missing_data` applies the same 30% rule once, over the whole
+features excluded by hand. `cdr-fs drop_missing` applies the same 30% rule once, over the whole
 table, before anything subsamples — so a feature is either in the analysis or out of it, where
 a per-subsample decision lets the same feature be present in one day's file and absent from
 another. That takes 97 to **95**, and needs neither hand exclusion: with the object indices
 classified correctly, both of those features survive on their own merits. The mechanism for
-excluding a feature by name is there, in `[missing_data] exclude`, and ships empty.
+excluding a feature by name is there, in `[drop_missing] exclude`, and ships empty.
 
 ## An aside that is really a check
 

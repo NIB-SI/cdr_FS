@@ -96,7 +96,7 @@ def test_the_exclusion_list_ships_empty(localised):
     on their own, and the two features the published run struck out by hand survive on their
     own merits. Naming them here would take the final list from 95 to 93.
     """
-    assert load_config(localised).missing_data.exclude == ()
+    assert load_config(localised).drop_missing.exclude == ()
 
 
 def test_the_quickstart_runs_exactly_as_shipped(monkeypatch):

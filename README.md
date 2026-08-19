@@ -8,7 +8,7 @@ curves are six standard concentration–response models ranked by AIC and BIC. T
 **c**oncentration/**d**ose–**r**esponse **F**eature **S**election.
 
 > The method was developed for, and has been applied to, one dataset — the RTgill-W1 screen
-> of [Tome et al. 2026](#origin). The experimental design is read from a configuration file
+> of [Tome et al. 2026](#origin-and-the-data). The experimental design is read from a configuration file
 > rather than written into the code — a statement about the code, not evidence that the
 > method carries to another organism, assay or chemistry.
 > [Reproducing the published run](#reproducing-the-published-run) says which published
@@ -80,7 +80,7 @@ cdr-fs emd          -c examples/quickstart.ini
 cdr-fs fit          -c examples/quickstart.ini
 cdr-fs select       -c examples/quickstart.ini
 cdr-fs correlation  -c examples/quickstart.ini
-cdr-fs missing_data -c examples/quickstart.ini
+cdr-fs drop_missing -c examples/quickstart.ini
 cdr-fs plot         -c examples/quickstart.ini --only fits --features results/representatives.txt
 ```
 
@@ -203,7 +203,7 @@ cdr-fs emd          -c config.ini          # distances per feature, stratum and 
 cdr-fs fit          -c config.ini          # fit the models to each distance series
 cdr-fs select       -c config.ini          # apply the retention rule
 cdr-fs correlation  -c config.ini          # collapse near-redundant features   (optional)
-cdr-fs missing_data -c config.ini          # drop sparse features, write the final table
+cdr-fs drop_missing -c config.ini          # drop sparse features, write the final table
 cdr-fs plot         -c config.ini          # draw the figures from whatever tables exist
 ```
 
@@ -213,7 +213,7 @@ cdr-fs plot         -c config.ini          # draw the figures from whatever tabl
 | `fit` | `fit.tsv` |
 | `select` | `selected.txt`; `select_evidence.tsv` — per feature and stratum, which model won, by how much, and what the linear slope was |
 | `correlation` | `representatives.txt`; `correlation_clusters.tsv` — every feature with its cluster and its distance to the representative; `correlation_linkage.tsv` — the tree and its leaf order |
-| `missing_data` | `final_<list>.tsv` — the table restricted to that list; `final_<list>_features.tsv` — how much data each column holds and which rule removed it; `final_<list>_retained.txt` |
+| `drop_missing` | `final_<list>.tsv` — the table restricted to that list; `final_<list>_features.tsv` — how much data each column holds and which rule removed it; `final_<list>_retained.txt` |
 | `plot` | `fit_<stratum>_part_<n>.png`; `emd.png` and `emd_baseline.png`; `dendrogram.png` |
 
 ### `trim` is optional
@@ -231,12 +231,12 @@ feature name per line.
 ### When a stage refuses
 
 A stage refuses rather than write an artefact that would read as a result: `fit` will not
-write a table when no series was complete, and `correlation` and `missing_data` will not run
+write a table when no series was complete, and `correlation` and `drop_missing` will not run
 on an empty feature list. Exit codes are 0 for success, 2 for a configuration error, 3 for
 nothing to do.
 
 There is one module per stage, named for it — `emd.py`, `fit.py`, `select.py`,
-`correlation.py`, `missing_data.py`, `trim.py`, `plots.py` — with `config.py` and `schema.py`
+`correlation.py`, `drop_missing.py`, `trim.py`, `plots.py` — with `config.py` and `schema.py`
 underneath.
 
 ## Reproducing the published run
@@ -251,7 +251,7 @@ difference is attributable to the stage under test:
 | `emd` | the two EMD tables — 16,946 treatment and 11,292 baseline distances | reproduced; both population sizes on every row exact, distances within 8.5e-13 relative |
 | `select` | the two retained feature lists — **182** across all days, **374** on D5 alone | both reproduced as identical sets |
 | `correlation` | the all-days list after the correlation stage — **99** features | reproduced, and its composition matches the published categorization across all 4 organelles × 7 measurement families |
-| `missing_data` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
+| `drop_missing` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
 
 The **182** and the **99** belong to the published metadata split, which carried CellProfiler's
 object-index columns as features; with those declared metadata, as `examples/published.ini`
@@ -273,18 +273,6 @@ The suite is deliberately small: it exists to hold these four numbers, and littl
 gates that compare against the published run itself need the dataset in `data/`, so they skip
 unless you opt in.
 
-## Test data
-
-The quickstart above runs on `tests/fixtures/subset.tsv`, one of the committed slices under
-[`tests/fixtures/`](tests/fixtures/README.md) that let everything above run without a download.
-
-[Reproducing the published run](#reproducing-the-published-run) needs the dataset itself. It is
-121 GB in total and lives on Zenodo: <https://doi.org/10.5281/zenodo.17951792> (CC-BY-4.0). The
-single file this tool starts from is `cell_ID_pooled_median_row_plate_standardization_cid.txt`,
-3.9 GB — the untrimmed, row/plate standardized per-cell table, 503,920 cells × 481 columns. It
-is deliberately *untrimmed*: trimming lives in this tool, so a run reproduces that step rather
-than inheriting it. Nothing that large belongs in git; put it in `data/`, which is ignored.
-
 ## Documentation
 
 | Page | What is on it |
@@ -294,7 +282,7 @@ than inheriting it. Nothing that large belongs in git; put it in `data/`, which 
 | [Method notes](docs/method-notes.md) | pooling replicates, correlation collapsing, the missing-data filter, and the figures |
 | [Reproducing the published run](docs/reproducing.md) | what each of the four gates checks, and what the numbers are and are not |
 
-## Origin
+## Origin, and the data
 
 This is an extraction of `scripts/feature_selection/` from
 [NIB-SI/HCS-proc](https://github.com/NIB-SI/HCS-proc), the pipeline published with:
@@ -304,11 +292,22 @@ This is an extraction of `scripts/feature_selection/` from
 > **Environmental Science & Technology** **2026**, *60* (31), 21402–21416.
 > <https://doi.org/10.1021/acs.est.5c18316>
 
-HCS-proc remains the citable record of the published pipeline. This repository takes one
-stage of it and makes it installable and configuration-driven, so that the experimental
-design is declared in a file instead of edited into five scripts. The original author's
-history is preserved here; because git does not score the extraction as a rename, reach it
-through the old path — `git log --oneline --follow -- legacy/plots_emd_model_drc.py`.
+HCS-proc remains the citable record of the published pipeline. This repository takes one stage
+of it and makes it installable and configuration-driven, so that the experimental design is
+declared in a file instead of edited into five scripts. The original author's history is
+preserved here; because git does not score the extraction as a rename, reach it through the old
+path — `git log --oneline --follow -- legacy/plots_emd_model_drc.py`.
+
+**The data is that work's data**, published alongside the article on Zenodo:
+<https://doi.org/10.5281/zenodo.17951792> (CC-BY-4.0), 121 GB in total. The single file this
+tool starts from is `cell_ID_pooled_median_row_plate_standardization_cid.txt`, 3.9 GB — the
+untrimmed, row/plate standardized per-cell table, 503,920 cells × 481 columns. It is
+deliberately *untrimmed*: trimming lives in this tool, so a run reproduces that step rather
+than inheriting it. Put it in `data/`, which is gitignored, and see
+[Reproducing the published run](#reproducing-the-published-run).
+
+The quickstart needs none of that. It runs on `tests/fixtures/subset.tsv`, a committed
+1,272-cell slice of the same table — see [`tests/fixtures/`](tests/fixtures/README.md).
 
 ## Licence and citation
 

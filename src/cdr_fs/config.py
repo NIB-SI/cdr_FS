@@ -75,7 +75,7 @@ _ALLOWED: dict[str, tuple[frozenset[str], frozenset[str]]] = {
             {"threshold", "linkage", "representative", "aggregate_by", "fill_missing"}
         ),
     ),
-    "missing_data": (frozenset({"drop_missing"}), frozenset({"max_missing", "exclude"})),
+    "drop_missing": (frozenset({"enabled"}), frozenset({"max_missing", "exclude"})),
     "output": (frozenset({"dir"}), frozenset()),
 }
 
@@ -174,8 +174,8 @@ class CorrelationSpec:
 
 
 @dataclass(frozen=True)
-class MissingDataSpec:
-    drop_missing: bool
+class DropMissingSpec:
+    enabled: bool
     #: Percent. A feature missing this much of the table or more is dropped.
     max_missing: float
     #: Exact feature names to leave out of the final table, whatever else says otherwise.
@@ -198,7 +198,7 @@ class Config:
     fit: FitSpec
     select: SelectSpec
     correlation: CorrelationSpec
-    missing_data: MissingDataSpec
+    drop_missing: DropMissingSpec
     output: OutputSpec
     #: "section.key" for every value that came from a default rather than the file.
     defaulted: tuple[str, ...]
@@ -287,11 +287,11 @@ class Config:
         # A mistyped exclusion fails in the dangerous direction: the feature stays in the
         # output and nothing says so. Names are matched exactly, so say which ones missed.
         unmatched = [
-            name for name in self.missing_data.exclude if name not in resolved.feature_set
+            name for name in self.drop_missing.exclude if name not in resolved.feature_set
         ]
         if unmatched:
             warnings.append(
-                f"[missing_data] exclude names {len(unmatched)} entry/entries that are not "
+                f"[drop_missing] exclude names {len(unmatched)} entry/entries that are not "
                 f"features of {self.input.table.name}: {', '.join(unmatched)}\n"
                 "  exclusions are matched exactly, so a mistyped name excludes nothing"
             )
@@ -505,7 +505,7 @@ def load_config(path: str | Path) -> Config:
     fit_spec = _read_fit(reader, design_spec)
     select_spec = _read_select(reader, schema_spec, fit_spec)
     correlation_spec = _read_correlation(reader, trim_spec)
-    missing_data_spec = _read_missing_data(reader)
+    drop_missing_spec = _read_drop_missing(reader)
     output_spec = OutputSpec(dir=Path(reader.text("output", "dir")))
 
     return Config(
@@ -518,7 +518,7 @@ def load_config(path: str | Path) -> Config:
         fit=fit_spec,
         select=select_spec,
         correlation=correlation_spec,
-        missing_data=missing_data_spec,
+        drop_missing=drop_missing_spec,
         output=output_spec,
         defaulted=tuple(reader.defaulted),
     )
@@ -859,15 +859,15 @@ def _read_select(
     )
 
 
-def _read_missing_data(reader: _Reader) -> MissingDataSpec:
+def _read_drop_missing(reader: _Reader) -> DropMissingSpec:
     # A filter that changes which columns leave the pipeline has to be stated, for the same
     # reason [trim] enabled and [correlation] enabled are required rather than defaulted.
-    return MissingDataSpec(
-        drop_missing=reader.boolean("missing_data", "drop_missing"),
+    return DropMissingSpec(
+        enabled=reader.boolean("drop_missing", "enabled"),
         # Exclusive at zero: "missing 0% or more" is true of every feature, so a threshold of
         # zero would empty the table rather than filter it.
         max_missing=reader.number(
-            "missing_data",
+            "drop_missing",
             "max_missing",
             default="30",
             minimum=0.0,
@@ -877,7 +877,7 @@ def _read_missing_data(reader: _Reader) -> MissingDataSpec:
         # Exact names, not patterns: an exclusion is a judgement about one feature, and a
         # regex that quietly matches a second one is the wrong tool for that.
         exclude=reader.unique(
-            "missing_data", "exclude", reader.items("missing_data", "exclude", default="")
+            "drop_missing", "exclude", reader.items("drop_missing", "exclude", default="")
         ),
     )
 
