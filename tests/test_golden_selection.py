@@ -2,15 +2,18 @@
 
 The sharpest test in the suite, and the cheapest: given the fit table the article's run
 produced, the rule either returns the published set of features or it does not. No
-tolerance, no numerical drift, no 3.7 GB input - just the 1 MB `model_fit_results.txt` in
-`data/` and two committed lists of names.
+tolerance, no numerical drift, no large input - everything it needs is committed, so it runs
+everywhere.
 
-The lists were taken from the headers of the published `*_trimmed_features.txt` tables,
-which are the selected feature lists applied back to the data. See `fixtures/README.md`.
+The fit table **predates the BC4 correction**, which is why its filename says so: back then
+BC4 was implemented as the four-parameter log-logistic, so its AIC is bit-identical to LL4's
+in all 1,760 series where both converged. That is exactly right here - it is the article's
+fit, and these are the article's lists, and together they are what yields 182. Swapping in a
+fit table from the current pipeline would give 199 and this test would fail, correctly;
+`test_the_fixture_is_the_pre_correction_fit` guards against exactly that mix-up.
 
-Note the fit table predates the BC4 correction, so its BC4 column is the log-logistic
-duplicate BC4 used to be. That is exactly right for this test: it is the article's fit, and
-these are the article's lists.
+The lists were taken from the headers of the published `*_trimmed_features.txt` tables, which
+are those lists applied back to the data. See `fixtures/README.md`.
 """
 
 from __future__ import annotations
@@ -25,15 +28,7 @@ from cdr_fs.config import load_config
 from cdr_fs.select import select_features
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-PUBLISHED_FITS = Path(__file__).resolve().parents[1] / "data" / "model_fit_results.txt"
-
-pytestmark = pytest.mark.skipif(
-    not PUBLISHED_FITS.exists(),
-    reason=(
-        f"{PUBLISHED_FITS.name} absent from data/ - it is the published fit table, "
-        "1 MB, and cannot be committed"
-    ),
-)
+PUBLISHED_FITS = FIXTURES / "published_model_fit_results_pre_bc4_fix.txt"
 
 #: (strata, fixture, expected count). 182 is the figure the article reports.
 GATES = [
@@ -110,3 +105,19 @@ def test_only_the_published_quantifiers_give_the_published_count(
     )
     retained, _, _ = select_features(config, as_fit_table(PUBLISHED_FITS))
     assert len(retained) == expected
+
+
+def test_the_fixture_is_the_pre_correction_fit():
+    """Guard the provenance of the fixture, because it is easy to get backwards.
+
+    Before the correction, BC4 was `c + (d-c)/(1+exp(...))` - algebraically LL4 - so the two
+    columns agree exactly wherever both converged. If someone replaces this file with a fit
+    from the current pipeline, the 182 above stops being reproducible and this says why.
+    """
+    table = as_fit_table(PUBLISHED_FITS)
+    wide = table.pivot_table(
+        index=["feature", "stratum"], columns="model", values="aic", aggfunc="first"
+    )
+    both = wide[["BC4", "LL4"]].dropna()
+    assert len(both) == 1760
+    assert (both["BC4"] == both["LL4"]).all()

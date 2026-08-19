@@ -51,8 +51,8 @@ INPUT = DATA / "cell_ID_pooled_median_row_plate_standardization_cid.txt"
 PUBLISHED_CONTRASTS = DATA / "EMD_conc_2.5_97.5_well.txt"
 PUBLISHED_BASELINE = DATA / "EMD_c11_2.5_97.5_well.txt"
 #: The published fit table, from the run behind the article - so BC4 is still the LL4
-#: duplicate it was before the correction. Optional: only the selection tests use it.
-PUBLISHED_FITS = DATA / "model_fit_results.txt"
+#: duplicate it was before the correction. Committed, since it is only 1 MB.
+PUBLISHED_FITS = Path(__file__).resolve().parent / "fixtures" / "published_model_fit_results_pre_bc4_fix.txt"
 
 TOLERANCE = 1e-9
 
@@ -259,10 +259,6 @@ def published_fit_table():
     return as_fit_table(PUBLISHED_FITS)
 
 
-@pytest.mark.skipif(
-    not PUBLISHED_FITS.exists(),
-    reason=f"{PUBLISHED_FITS.name} absent from {DATA}",
-)
 def test_the_deterministic_models_match_the_published_fit(published_run, tmp_path):
     """Con and Lin agree to floating-point noise; the sigmoids cannot be expected to.
 
