@@ -363,6 +363,11 @@ INVALID_CASES: list[tuple[str, dict[str, str | None], str]] = [
         {"subset.drop_missing": "true", "subset.max_missing": "130"},
         "expected a number in (0, 100]",
     ),
+    (
+        "repeated exclusion",
+        {"subset.exclude": "counts_RelateLysoCell,counts_RelateLysoCell"},
+        "[subset] exclude - repeats: counts_RelateLysoCell",
+    ),
 ]
 
 # Cases that need the data, not just the header: (label, overrides, fragment).

@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 import pytest
-from cases import SUBSET, validate
+from cases import COLUMNS_PUBLISHED, SUBSET, validate
 
 from cdr_fs.config import MODELS, load_config
 
@@ -37,9 +37,46 @@ def localised(tmp_path):
 
 def test_example_is_valid_against_real_data(localised):
     config, warnings = validate(localised, observed=True)
-    assert warnings == []
+    # One warning, and it is about the fixture rather than the configuration: `subset.tsv` is
+    # a 30-column slice that happens to contain none of the eight object-index columns, so the
+    # pattern naming them matches nothing here. On the full header it matches all eight - see
+    # `test_the_object_index_columns_are_metadata`.
+    assert len(warnings) == 1
+    assert "Number_Object_Number" in warnings[0]
     assert config.trim.enabled is True
     assert config.select.strata == ("D1", "D5", "D7", "D9")
+
+
+def test_the_object_index_columns_are_metadata(localised):
+    """`Number_Object_Number` is CellProfiler's within-image object label, not a measurement.
+
+    The published run carried all eight of those columns as features - seven passed the
+    concentration-response gate and two survived correlation pruning - and removed them by name
+    downstream. Declaring them metadata makes the same decision at the start.
+    """
+    from cdr_fs.schema import resolve_schema
+
+    columns = COLUMNS_PUBLISHED.read_text(encoding="utf-8").split()
+    resolved = resolve_schema(columns, load_config(localised).schema.compiled)
+    assert len(columns) == 481
+    assert (len(resolved.metadata), len(resolved.features)) == (18, 463)
+    assert resolved.prefix_breakdown() == [("rp_", 461), ("counts_", 2)]
+    assert not any("Number_Object_Number" in name for name in resolved.features)
+    # Both organelle counts stay features: they are appended measurements, not labels.
+    assert set(resolved.features_with_prefix("counts_")) == {
+        "counts_RelateLysoCell",
+        "counts_RelateMitoCell",
+    }
+
+
+def test_the_exclusion_list_ships_empty(localised):
+    """The mechanism is there; the reference run needs no hand exclusions.
+
+    With the object indices classified as metadata the rules reach the published feature count
+    on their own, and the two features the published run struck out by hand survive on their
+    own merits. Naming them here would take the final list from 95 to 93.
+    """
+    assert load_config(localised).subset.exclude == ()
 
 
 def test_example_still_carries_the_published_defaults(localised):

@@ -75,7 +75,7 @@ _ALLOWED: dict[str, tuple[frozenset[str], frozenset[str]]] = {
             {"threshold", "linkage", "representative", "aggregate_by", "fill_missing"}
         ),
     ),
-    "subset": (frozenset({"drop_missing"}), frozenset({"max_missing"})),
+    "subset": (frozenset({"drop_missing"}), frozenset({"max_missing", "exclude"})),
     "output": (frozenset({"dir"}), frozenset()),
 }
 
@@ -178,6 +178,8 @@ class SubsetSpec:
     drop_missing: bool
     #: Percent. A feature missing this much of the table or more is dropped.
     max_missing: float
+    #: Exact feature names to leave out of the final table, whatever else says otherwise.
+    exclude: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -281,6 +283,15 @@ class Config:
                 "[schema] metadata_patterns entries matching no column: "
                 f"{', '.join(resolved.unused_patterns)}\n"
                 "  a typo here silently turns a metadata column into a feature"
+            )
+        # A mistyped exclusion fails in the dangerous direction: the feature stays in the
+        # output and nothing says so. Names are matched exactly, so say which ones missed.
+        unmatched = [name for name in self.subset.exclude if name not in resolved.feature_set]
+        if unmatched:
+            warnings.append(
+                f"[subset] exclude names {len(unmatched)} entry/entries that are not "
+                f"features of {self.input.table.name}: {', '.join(unmatched)}\n"
+                "  exclusions are matched exactly, so a mistyped name excludes nothing"
             )
         return warnings
 
@@ -816,6 +827,11 @@ def _read_subset(reader: _Reader) -> SubsetSpec:
             minimum=0.0,
             maximum=100.0,
             exclude_minimum=True,
+        ),
+        # Exact names, not patterns: an exclusion is a judgement about one feature, and a
+        # regex that quietly matches a second one is the wrong tool for that.
+        exclude=reader.unique(
+            "subset", "exclude", reader.items("subset", "exclude", default="")
         ),
     )
 

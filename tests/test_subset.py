@@ -29,6 +29,18 @@ def table() -> pd.DataFrame:
     )
 
 
+def test_a_mistyped_exclusion_is_warned_about(tmp_path):
+    """It fails in the dangerous direction - the feature stays in and nothing says so."""
+    from cases import validate, write_config
+
+    config = write_config(
+        tmp_path, {"subset.exclude": "counts_RelateLysoCell,counts_RelateLysoCel"}
+    )
+    _, warnings = validate(config)
+    assert any("counts_RelateLysoCel" in warning for warning in warnings)
+    assert any("matched exactly" in warning for warning in warnings)
+
+
 def test_columns_come_out_in_the_table_order_not_the_list_order():
     """Two lists over one table then give column-comparable files."""
     subset, _, report = subset_table(table(), METADATA, ["apple", "zebra"])
@@ -146,6 +158,55 @@ def test_the_counts_describe_what_survived():
     assert report.values_total == 4 * 2  # zebra and flat, not apple
     assert report.values_present == 8
     assert report.fraction_present == 1.0
+
+
+# ------------------------------------------------------------------ named exclusions
+
+
+def test_a_named_feature_is_excluded_whatever_its_quality():
+    subset, quality, report = subset_table(
+        table(), METADATA, ["zebra", "flat"], exclude=["zebra"]
+    )
+    assert list(subset.columns) == [*METADATA, "flat"]
+    assert report.excluded == ("zebra",)
+    assert report.kept == 1
+    assert quality.set_index("feature").loc["zebra", "drop_reason"] == "excluded"
+    assert "excluded 1 feature(s) by name: zebra" in report.summary()
+
+
+def test_an_exclusion_takes_precedence_over_the_missing_data_reason():
+    """A feature struck out by hand is reported as excluded, not as thin.
+
+    Both would remove it, but only one of them is a decision somebody made.
+    """
+    _, quality, report = subset_table(
+        table(),
+        METADATA,
+        ["zebra", "apple"],
+        drop_missing=True,
+        max_missing=30,
+        exclude=["apple"],
+    )
+    assert report.excluded == ("apple",)
+    assert report.dropped == ()
+    assert quality.set_index("feature").loc["apple", "drop_reason"] == "excluded"
+
+
+def test_excluding_everything_leaves_metadata():
+    subset, _, report = subset_table(
+        table(), METADATA, ["zebra", "flat"], exclude=["zebra", "flat"]
+    )
+    assert list(subset.columns) == METADATA
+    assert report.kept == 0
+
+
+def test_an_exclusion_that_names_nothing_is_harmless_here():
+    """`cdr-fs check` warns about it; this stage simply has nothing to remove."""
+    _, quality, report = subset_table(
+        table(), METADATA, ["zebra"], exclude=["ghost", "unused"]
+    )
+    assert report.excluded == ()
+    assert not quality["dropped"].any()
 
 
 def test_the_list_reader_drops_blanks_and_duplicates(tmp_path):

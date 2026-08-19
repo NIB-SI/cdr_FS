@@ -285,6 +285,14 @@ def _describe(config: Config) -> list[str]:
                 f"table or more is dropped)",
             )
         )
+    lines.append(
+        _field(
+            "exclude",
+            f"{len(config.subset.exclude)}: {_abbreviate(config.subset.exclude, limit=4)}"
+            if config.subset.exclude
+            else "(none)",
+        )
+    )
     lines += ["[output]", _field("dir", str(config.output.dir))]
     return lines
 
@@ -570,6 +578,7 @@ def _subset(args: argparse.Namespace) -> int:
         features,
         drop_missing=config.subset.drop_missing,
         max_missing=config.subset.max_missing,
+        exclude=config.subset.exclude,
     )
     print(report.summary())
 

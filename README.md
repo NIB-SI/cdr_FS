@@ -85,7 +85,7 @@ Each stage reads the previous one's output from `[output] dir` under a stable na
 | `select` | `selected.txt`; `select_evidence.tsv` — per feature and stratum, which model won, by how much, and what the linear slope was |
 | `prune` | `pruned.txt`; `prune_clusters.tsv` — every feature with its cluster and how far it sits from the representative; `prune_linkage.tsv` — the tree and its leaf order, so the dendrogram can be drawn without recomputing a correlation |
 | `plot` | `fit_<stratum>_part_<n>.png` — the fit panels; `emd.png` and `emd_baseline.png` — the distance distributions; `dendrogram.png` — the tree pruning cut |
-| `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and whether the missing-data filter dropped it; `subset_<list>_retained.txt` — the features that survived, one per line |
+| `subset` | `subset_<list>.tsv` — the table restricted to that list; `subset_<list>_features.tsv` — how much data each column holds and which rule, if any, removed it; `subset_<list>_retained.txt` — the features that survived, one per line |
 
 `cdr-fs run`, which would chain the stages, exists in `--help` and refuses to run. The nine original
 scripts are kept unmodified in [`legacy/`](legacy/README.md) as the reference each rewritten
@@ -147,6 +147,7 @@ rejected for the same reason.
 | | `fill_missing` | `column_mean` | `column_mean` or `none` — see [Collapsing redundant features](#collapsing-redundant-features) |
 | `subset` | `drop_missing` | *required* | drop features too empty to carry; a filter on the output must be stated |
 | | `max_missing` | `30` | percent; a feature missing this much of the table **or more** is dropped |
+| | `exclude` | *(empty)* | exact feature names to leave out of the final table, whatever else says |
 | `output` | `dir` | *required* | where results are written |
 
 Three things this configuration makes explicit that were previously implicit in the
@@ -181,13 +182,28 @@ metadata and silently discard a feature the published run kept.
 minority groups are visible:
 
 ```
-[columns]  481 = 10 metadata + 471 feature(s)
-  features          rp_* 469, counts_* 2
+[columns]  481 = 18 metadata + 463 feature(s)
+  features          rp_* 461, counts_* 2
     counts_*        counts_RelateLysoCell, counts_RelateMitoCell
 ```
 
 It also warns about any pattern that matched nothing, since that is how a metadata column
 quietly turns into a feature.
+
+The mistake runs the other way too, and it is harder to see. A column can be named like a
+measurement and still be a label:
+
+```
+rp_norm_Number_Object_Number_*      CellProfiler's object index -> metadata
+```
+
+`Number_Object_Number` is the running number of an object within its image. It has no
+biological content, but it *does* respond to exposure — the number of objects per image changes
+with dose, which shifts the index distribution, which moves the earth mover's distance. Seven of
+its eight columns passed the concentration-response gate in the published run and two survived
+correlation pruning; the pipeline removed them by name at the very end. Declaring them metadata
+is the same decision made where it belongs, and `examples/published.ini` does. Nothing in the
+tool guesses this for you: only a pattern you write keeps a label out of the analysis.
 
 ### Spacing the exposure axis
 
@@ -293,7 +309,7 @@ The dendrogram colours links and leaf labels from the same cluster table, so a c
 is a cluster. The original drew the tree with one linkage method and cut it with another, so
 its colours were only approximately the clustering.
 
-## Dropping features with too little data
+## Dropping features from the final table
 
 Trimming removes values rather than rows, so a feature can be missing for most objects and
 still be present as a column. `[subset] drop_missing` removes the ones too empty to be worth
@@ -310,26 +326,35 @@ and 95% of their values. The next thinnest surviving feature is missing 13%, so 
 14% to 46% gives the same 97 — the threshold sits on a wide plateau rather than on a knife
 edge, which is the useful thing to know about choosing it.
 
+`[subset] exclude` is the other half: exact feature names to leave out whatever their quality —
+the escape hatch for a judgement no rule expresses, such as a feature known to be an artifact of
+one assay. Exact names rather than patterns, because a regex that quietly takes a second feature
+with it is the wrong tool for a decision made one feature at a time; a name that matches nothing
+is reported by `cdr-fs check`, since the failure mode is that the feature stays in and nobody
+notices. `subset_<list>_features.tsv` records which rule removed each feature, and an explicit
+exclusion is reported as an exclusion even when the missing-data rule would also have caught it.
+
 Nothing else is filtered. A constant feature, or one whose surviving values all come from a
 single object, is named in the report and flagged in `subset_<list>_features.tsv`; what to do
 about that depends on the analysis, and guessing is worse than saying so.
 
 ## Reproducing the published run
 
-`examples/published.ini` is the configuration of the run described in the article. Three
-stages have a published output to check against, and all three return it:
+`examples/published.ini` is the configuration for the dataset the method was published on.
+Every stage that has a published output to check against returns it:
 
 | Stage | Published output | Result |
 |---|---|---|
 | `emd` | the two EMD tables — 16,946 treatment and 11,292 baseline distances | every one of the 28,238 population sizes exact, distances within 8.5e-13 relative |
 | `select` | the two retained feature lists — **182** across all days, **374** on D5 alone | both reproduced as identical sets |
 | `prune` | the all-days list after pruning — **99** features | reproduced, and its composition matches the published categorization across all 4 organelles x 7 measurement families |
+| `subset` | the final retained list — **95** features | reproduced: 94 `rp_norm_*` plus `counts_RelateLysoCell` |
 
 The selection gate runs off the published fit table, so it isolates the retention rule from
 the curve fitting; `tests/test_golden_selection.py` needs only a 1 MB committed fixture and
-runs in a second. The other two need the large inputs and are opt-in — see [Tests](#tests).
+runs in a second. The others need the large inputs and are opt-in — see [Tests](#tests).
 
-Two notes on what those numbers are and are not.
+Three notes on what those numbers are and are not.
 
 **The pruning check is on composition, not just on the count.** A single wrong merge would
 still give a plausible number, so the assertion is against the published feature
@@ -337,15 +362,23 @@ categorization, every cell of which is labelled in
 [HCS-proc's figure](https://github.com/NIB-SI/HCS-proc). Reproducing the count *and* the
 composition takes the same 99 features.
 
-**The published run's final list is shorter than 99, and the last step of getting there moved.**
-The pipeline dropped features with 30% or more missing values — plus two excluded by hand — but
-it did so while building the subsets for its dimension-reduction analyses: *per day-subset*,
-downstream of the selection. `cdr-fs subset` applies the same 30% rule over the whole table
-instead, which takes 99 to **97**. Applying it once, before anything subsamples, is the change
-worth making: a feature is then either in the analysis or out of it, where a per-subsample
-decision lets the same feature be present in one day's file and absent from another. See
-[Dropping features with too little data](#dropping-features-with-too-little-data). The two
-hand-excluded features are not reproduced; a hardcoded exclusion list is not a rule.
+**The 182 and the 99 belong to the published metadata split, and the 95 does not.** The
+published run treated the eight `Number_Object_Number` columns as measured features; they are
+CellProfiler's within-image object index, so `examples/published.ini` declares them metadata —
+see the warning [above](#one-warning-worth-reading-before-you-write-metadata_patterns). The two
+gates above are asserted against the published split, because reproducing a published
+intermediate means reproducing the choices that produced it. With the object indices out, the
+same rules give **463 features → 175 after selection → 97 after pruning → 95**.
+
+**The last step of the published route moved, and it lands in the same place.** The pipeline
+dropped features with 30% or more missing values while building the subsets for its
+dimension-reduction analyses: *per day-subset*, downstream of the selection, along with two
+features excluded by hand. `cdr-fs subset` applies the same 30% rule once, over the whole table,
+before anything subsamples — so a feature is either in the analysis or out of it, where a
+per-subsample decision lets the same feature be present in one day's file and absent from
+another. That takes 97 to **95**, and needs neither hand exclusion: with the object indices
+classified correctly, both of those features survive on their own merits. The mechanism for
+excluding a feature by name is there, in `[subset] exclude`, and ships empty.
 
 ### An aside that is really a check
 

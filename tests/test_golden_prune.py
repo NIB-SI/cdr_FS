@@ -115,6 +115,7 @@ def pruned(tmp_path_factory):
         "report": report,
         "frame": frame,
         "metadata": schema.metadata,
+        "config": config,
     }
 
 
@@ -217,6 +218,45 @@ def test_the_missing_data_filter_takes_two_more(pruned):
     ]
     surviving = quality[~quality["dropped"]]["nonmissing_fraction"]
     assert surviving.min() == pytest.approx(0.870, abs=5e-4)
+
+
+def test_treating_the_object_indices_as_metadata_lands_on_the_published_list(pruned):
+    """The route `examples/published.ini` takes: 175 -> 97 -> 95.
+
+    `Number_Object_Number` is CellProfiler's within-image object label. Seven of its eight
+    columns passed the concentration-response gate, and the published run carried them through
+    pruning and then removed them by name downstream. Declaring them metadata instead removes
+    them here - and they turn out to form exactly two pure clusters of the 99, one of four
+    members and one of three, so nothing else about the clustering changes.
+
+    What comes out is 95 features: 94 `rp_norm_*` plus `counts_RelateLysoCell`, which is the
+    length and the composition of the published retained list. The two features the published
+    run also struck out by hand are in it, and survive on their own merits.
+    """
+    from cdr_fs.subset import subset_table
+
+    labels = [name for name in pruned["features"] if "Number_Object_Number" in name]
+    assert len(labels) == 7
+    # All seven sit in clusters made only of labels, so removing them removes whole clusters.
+    clusters = pruned["clusters"]
+    label_clusters = set(clusters.loc[clusters["feature"].isin(labels), "cluster"])
+    members = clusters[clusters["cluster"].isin(label_clusters)]
+    assert sorted(members.drop_duplicates("cluster")["size"]) == [3, 4]
+    assert set(members["feature"]) == set(labels)
+
+    measurements = [name for name in pruned["features"] if name not in set(labels)]
+    kept, _, _, report = prune_features(pruned["config"], pruned["frame"], measurements)
+    assert (report.features, report.kept) == (175, 97)
+
+    _, _, final = subset_table(
+        pruned["frame"], pruned["metadata"], kept, drop_missing=True, max_missing=30
+    )
+    assert final.kept == 95
+    surviving = set(kept) - {name for name, _ in final.dropped}
+    assert sum(name.startswith("rp_norm_") for name in surviving) == 94
+    assert surviving - {name for name in surviving if name.startswith("rp_norm_")} == {
+        "counts_RelateLysoCell"
+    }
 
 
 def test_the_linkage_table_describes_the_same_tree(pruned):

@@ -21,6 +21,15 @@ either in the analysis or out of it. Deciding per subsample instead lets the sam
 present in one day's file and absent from another, which makes the resulting sets
 incomparable - and it is what the original pipeline did, in its dimension-reduction step.
 
+## Excluding a feature by name
+
+`[subset] exclude` lists exact feature names to leave out, whatever else says about them. It
+is the escape hatch for a judgement no rule expresses - a feature known to be an artifact of
+this assay, a channel that was mis-set on one plate - and it is deliberately exact names
+rather than patterns, because a regex that quietly matches a second feature is the wrong tool
+for a decision made one feature at a time. A name that matches nothing is warned about by
+`cdr-fs check`: the failure mode is that the feature stays in and nobody notices.
+
 Everything else is left alone and reported rather than filtered. A constant feature or one
 with a single surviving value is named in the report and flagged in the per-feature table;
 what to do about it depends on the analysis, and guessing is worse than saying so.
@@ -45,6 +54,7 @@ QUALITY_COLUMNS = (
     "n_distinct",
     "constant",
     "dropped",
+    "drop_reason",
 )
 
 
@@ -60,6 +70,8 @@ class SubsetReport:
     absent: tuple[str, ...]
     #: Removed by the missing-data filter, with the fraction of the table each was missing.
     dropped: tuple[tuple[str, float], ...]
+    #: Removed because `[subset] exclude` named them.
+    excluded: tuple[str, ...]
     drop_missing: bool
     max_missing: float
     values_present: int
@@ -73,7 +85,7 @@ class SubsetReport:
 
     @property
     def kept(self) -> int:
-        return self.matched - len(self.dropped)
+        return self.matched - len(self.dropped) - len(self.excluded)
 
     @property
     def fraction_present(self) -> float:
@@ -90,10 +102,15 @@ class SubsetReport:
                 f"  {len(self.absent)} feature(s) in the list are not columns of the table "
                 f"and were skipped: {_listing(self.absent)}"
             )
+        if self.excluded:
+            lines.append(
+                f"  excluded {len(self.excluded)} feature(s) by name: "
+                f"{_listing(self.excluded)}"
+            )
         if self.drop_missing:
             lines.append(
-                f"  dropped {len(self.dropped)} of {self.matched} feature(s) missing "
-                f"{self.max_missing:g}% of the table or more"
+                f"  dropped {len(self.dropped)} of {self.matched - len(self.excluded)} "
+                f"feature(s) missing {self.max_missing:g}% of the table or more"
                 + (":" if self.dropped else "")
             )
             lines.extend(
@@ -134,13 +151,15 @@ def subset_table(
     *,
     drop_missing: bool = False,
     max_missing: float = 30.0,
+    exclude: Sequence[str] = (),
 ) -> tuple[pd.DataFrame, pd.DataFrame, SubsetReport]:
     """Restrict `frame` to `metadata` plus whichever of `features` it actually has.
 
-    With `drop_missing`, a feature missing `max_missing` percent of the rows or more is left
-    out. Columns come out in the table's own order rather than the list's, so that two lists
-    over the same table give column-comparable files. Returns the subset, a per-feature
-    quality table covering every matched feature including the dropped ones, and a report.
+    `exclude` names features to leave out whatever their quality, and with `drop_missing` a
+    feature missing `max_missing` percent of the rows or more is left out too. Columns come out
+    in the table's own order rather than the list's, so that two lists over the same table give
+    column-comparable files. Returns the subset, a per-feature quality table covering every
+    matched feature including the ones removed, and a report.
     """
     import numpy as np
     import pandas as pd
@@ -162,13 +181,18 @@ def subset_table(
         dtype=np.int64,
     )
     fraction = counts / len(frame) if len(frame) else np.zeros(len(matched))
+    # Named exclusions first: a feature the user has excluded by hand is reported as excluded
+    # even when it would also have failed the missing-data rule, because that is the reason
+    # that was actually given for it.
+    excluded = np.array([name in set(exclude) for name in matched], dtype=bool)
     # Compared as counts rather than as percentages, so that a feature missing exactly the
     # threshold falls on the documented side of it whatever the rounding.
-    dropped = (
+    too_missing = (
         (len(frame) - counts) * 100 >= max_missing * len(frame)
         if drop_missing
         else np.zeros(len(matched), dtype=bool)
     )
+    too_missing &= ~excluded
 
     quality = pd.DataFrame(
         {
@@ -177,15 +201,17 @@ def subset_table(
             "nonmissing_fraction": fraction,
             "n_distinct": distinct,
             "constant": (distinct == 1) & (counts >= 2),
-            "dropped": dropped,
+            "dropped": excluded | too_missing,
+            "drop_reason": np.where(excluded, "excluded", np.where(too_missing, "missing", "")),
         },
         columns=list(QUALITY_COLUMNS),
     )
-    kept = [name for name, gone in zip(matched, dropped) if not gone]
+    kept = list(quality.loc[~quality["dropped"], "feature"])
     subset = frame[[column for column in frame.columns if column in set(metadata)] + kept]
 
     surviving = quality[~quality["dropped"]]
     order = surviving["nonmissing_fraction"].to_numpy().argsort(kind="stable")
+    missing = quality[quality["drop_reason"] == "missing"]
     report = SubsetReport(
         rows=len(frame),
         requested=len(requested),
@@ -193,11 +219,9 @@ def subset_table(
         absent=tuple(absent),
         dropped=tuple(
             (name, 1.0 - value)
-            for name, value in zip(
-                quality.loc[quality["dropped"], "feature"],
-                quality.loc[quality["dropped"], "nonmissing_fraction"],
-            )
+            for name, value in zip(missing["feature"], missing["nonmissing_fraction"])
         ),
+        excluded=tuple(quality.loc[quality["drop_reason"] == "excluded", "feature"]),
         drop_missing=drop_missing,
         max_missing=max_missing,
         values_present=int(surviving["n_present"].sum()),
