@@ -39,6 +39,12 @@ where a difference of means does not. That is the effect the article set out to 
 subcytotoxic exposures, and it is why the method is built on distances rather than on
 summaries.
 
+**The whole thing rests on one assumption**, and it is worth being blunt about: that a
+higher exposure pushes a feature's distribution further from the control than a lower one
+does. That is what makes the distances a series worth fitting a curve to, and it is what the
+positive-slope gate tests. A response that is not monotone in exposure — one that saturates,
+reverses, or only appears in a middle band — is not what this looks for.
+
 ### Why `cdr_FS`
 
 **c**oncentration/**d**ose **r**esponse **F**eature **S**election.
@@ -376,29 +382,21 @@ and every contrast is control-versus-level, so a vehicle-versus-untreated compar
 rejected — as is any other contrast that is not control-versus-level. A two-arm design, as
 above. A level label containing a comma, since `levels` is comma-separated.
 
-**Accepted, and quietly not what you meant.** These have no guard at all:
+**Accepted, and quietly not what you meant.** What the configuration describes is one
+exposure axis and at most one stratification factor. Anything richer — a chemical A ×
+chemical B factorial, day *and* cell line, plates nested inside batches inside days — has to
+be flattened into a single column upstream, and if you flatten it wrongly the run still
+completes. There is no pairing either: the distance is between two independent empirical
+distributions, so a repeated-measures design runs with its pairing discarded.
 
-- **Crossed designs.** One `condition` column and one ordered list, so a chemical A ×
-  chemical B factorial has to be flattened to one label per cell of the grid — and `levels`
-  then imposes a single total order on something two-dimensional. A curve is fitted along
-  whatever order you wrote.
-- **Two stratifications at once.** `group_by` names one column. Day × cell line has to be
-  concatenated upstream into a single column; picking one and ignoring the other runs
-  perfectly well.
-- **Time, or anything else, as a *response*.** `group_by` is a partition, never a covariate.
-  "Does the response grow with exposure time" gets four separate answers and no test of the
-  question that was asked.
-- **Nested replicates.** `pool_over` is one column, so with plates inside batches inside
-  days only one level of that hierarchy is the replicate axis. (`[trim] scope` and
-  `[prune] aggregate_by` do take several columns, but only for their own purposes.)
-- **Paired designs.** The distance is between two independent empirical distributions. There
-  is no pairing mechanism; a per-object identifier is metadata and nothing more.
-- **Direction of effect.** The earth mover's distance is unsigned, so a feature whose values
-  *fall* with exposure is retained exactly like one that rises. "Positive slope" describes
-  the distance growing, not the measurement growing.
+One of these deserves stating on its own, because it is a property of the statistic and not
+of the format. **The earth mover's distance is unsigned.** A feature whose values *fall* with
+exposure is retained exactly like one whose values rise — "positive slope" describes the
+distance from the control growing, not the measurement growing. Which direction a retained
+feature moved in is a question for the data, and this tool does not answer it.
 
-One more that surprises people: **`[select] strata` narrows the whole run, not only the
-selection.** `emd` and `fit` read it too, so setting it to one stratum means the distance
+One more, because it surprises people: **`[select] strata` narrows the whole run, not only
+the selection.** `emd` and `fit` read it too, so setting it to one stratum means the distance
 table holds only that stratum, with nothing in the file to say it is partial.
 
 ## Pooling replicates

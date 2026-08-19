@@ -188,12 +188,21 @@ def _describe(config: Config) -> list[str]:
         _field("metadata_patterns", _abbreviate(config.schema.metadata_patterns)),
         "[design]",
         _field("control", design.control),
-        _field("levels", f"{_abbreviate(design.levels)}   (low to high)"),
+        _field("levels", _abbreviate(design.levels)),
     ]
+    # Spelled out rather than left to "(low to high)": the order of this list is the
+    # response axis, and a list written the wrong way round runs to completion, negates
+    # every slope and retains nothing. This line is where a reader can catch that.
+    ends = f"{design.levels[0]} is the LOWEST exposure, {design.levels[-1]} the highest"
+    if design.dose is not None:
+        ends += f"   ({design.dose[0]:g} -> {design.dose[-1]:g})"
+    lines.append(_field("exposure axis", ends))
     if design.dose is not None:
         lines.append(_field("dose", _abbreviate(f"{value:g}" for value in design.dose)))
     else:
-        lines.append(_field("dose", "(none - levels are used by rank)"))
+        lines.append(
+            _field("dose", "(none - levels are used by rank, and nothing checks their order)")
+        )
     lines += [
         _field(
             "exclude_from_fit",

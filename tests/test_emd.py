@@ -16,12 +16,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-from cases import write_config
+from cases import COLUMNS_PUBLISHED, METADATA_PATTERNS, write_config
 
 from cdr_fs.config import load_config
 from cdr_fs.emd import (
     baseline_comparisons,
     compute_contrasts,
+    contrast_comparisons,
 )
 
 SIMPLE = {
@@ -109,3 +110,50 @@ def test_only_non_missing_values_contribute_and_counts_say_so(tmp_path):
     assert row["n_a"] == 80  # control untouched: 2 replicates x 40
     assert row["n_b"] == 70  # ten values dropped
     assert row["n_b"] < row["n_a"]
+
+
+def test_the_published_grid_is_the_shape_the_configuration_asks_for(tmp_path):
+    """The size of both published EMD tables, derived without reading a byte of the data.
+
+    16,946 and 11,292 are otherwise asserted only by `test_golden.py`, which needs 3.9 GB
+    and skips by default - so a change to the contrast set or the baseline pairing would sit
+    unnoticed until someone downloaded the dataset. Both numbers are grid sizes: features
+    times strata times comparisons, less the cells where a population was empty. Everything
+    but the feature count comes from the design, and the feature count comes from the
+    committed header.
+
+    A skeleton frame is enough. The comparisons depend on which combinations of day, level
+    and replicate exist, not on how many objects sit in each.
+    """
+    import itertools
+
+    from cdr_fs.schema import resolve_schema
+
+    columns = COLUMNS_PUBLISHED.read_text(encoding="utf-8").split()
+    features = len(resolve_schema(columns, METADATA_PATTERNS).features)
+    assert features == 471  # the published split, before the object indices became metadata
+
+    days = ["D1", "D5", "D7", "D9"]
+    replicates = ["BR1", "BR2", "BR3", "BR4"]
+    levels = ["11", "10", "9", "8", "7", "6", "5", "4", "3", "2"]
+    skeleton = pd.DataFrame(
+        [
+            {"Metadata_Day": day, "Metadata_Biorep": rep, "Concentration": level}
+            for day, rep, level in itertools.product(days, replicates, levels)
+        ]
+    )
+    config = load_config(write_config(tmp_path))
+
+    # Control against each of the nine levels, on each of the four days. The withheld top
+    # dose is still measured - only the fit skips it - so it is nine, not eight.
+    treatment = len(contrast_comparisons(config, skeleton))
+    assert treatment == 4 * 9
+    # Every unordered pair of the four replicates, at the control, on each day.
+    baseline = len(baseline_comparisons(config, skeleton))
+    assert baseline == 4 * 6
+
+    # The published tables sit just under the full grids: the shortfall is the
+    # (feature, comparison) cells where one side had no values left after trimming.
+    published_treatment, published_baseline = 16_946, 11_292
+    assert features * treatment - published_treatment == 10
+    assert features * baseline - published_baseline == 12
