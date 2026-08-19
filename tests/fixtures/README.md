@@ -47,3 +47,23 @@ NR==1{ n=0; for(i=1;i<=12;i++){keep[++n]=i}
 
 Columns 1-12 of the full table are the 10 metadata columns plus
 `counts_RelateLysoCell` and `counts_RelateMitoCell`; 13-481 are the `rp_norm_*` features.
+
+## `published_selected_all_days.txt` (12 KB) and `published_selected_D5.txt` (20 KB)
+
+The two feature lists the published run selected, one per gate: across all four days
+(**182** features) and on D5 alone (**374**). Taken from the headers of the published
+`all_days_trimmed_features.txt` and `D5_trimmed_features.txt`, which are those lists applied
+back to the data and far too large to keep (1.5 GB and 3.0 GB):
+
+```bash
+head -1 all_days_trimmed_features.txt | tr '\t' '\n' | grep -vxE \
+  "Concentration|counts_Cells|counts_Cytoplasm|counts_FilteredNuclei|Metadata_Well|Metadata_Day|Metadata_Biorep|Tech_replica|Day_Well_BR|cell_ID"
+```
+
+`counts_RelateLysoCell` is the first entry of the all-days list - the `counts_` trap seen from
+the far end of the pipeline. A `^counts_` metadata pattern would have classified it as
+metadata, and a feature the published run retained could never have reached selection.
+
+Both lists predate the BC4 correction, so they pair with `data/model_fit_results.txt` rather
+than with a fit produced by the current pipeline. `tests/test_golden_selection.py` uses them,
+and skips when that fit table is absent.

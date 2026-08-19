@@ -39,6 +39,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from cases import METADATA_PATTERNS, write_config
+from tests_support import as_fit_table
 
 from cdr_fs.config import load_config
 from cdr_fs.emd import compute_baseline, compute_contrasts
@@ -49,6 +50,9 @@ DATA = Path(__file__).resolve().parents[1] / "data"
 INPUT = DATA / "cell_ID_pooled_median_row_plate_standardization_cid.txt"
 PUBLISHED_CONTRASTS = DATA / "EMD_conc_2.5_97.5_well.txt"
 PUBLISHED_BASELINE = DATA / "EMD_c11_2.5_97.5_well.txt"
+#: The published fit table, from the run behind the article - so BC4 is still the LL4
+#: duplicate it was before the correction. Optional: only the selection tests use it.
+PUBLISHED_FITS = DATA / "model_fit_results.txt"
 
 TOLERANCE = 1e-9
 
@@ -242,3 +246,51 @@ def test_population_sizes_reproduce_exactly(published_run, which):
     theirs_b = np.where(swapped, merged["Count1"], merged["Count2"])
     assert np.array_equal(merged["n_a"].to_numpy(), theirs_a)
     assert np.array_equal(merged["n_b"].to_numpy(), theirs_b)
+
+
+# ------------------------------------------ the fit, against the published fit table
+#
+# The selection half of this comparison lives in test_golden_selection.py, which needs
+# only the 1 MB fit table and so runs without opting in.
+
+
+def published_fit_table():
+    """The published fit table, in this package's column layout."""
+    return as_fit_table(PUBLISHED_FITS)
+
+
+@pytest.mark.skipif(
+    not PUBLISHED_FITS.exists(),
+    reason=f"{PUBLISHED_FITS.name} absent from {DATA}",
+)
+def test_the_deterministic_models_match_the_published_fit(published_run, tmp_path):
+    """Con and Lin agree to floating-point noise; the sigmoids cannot be expected to.
+
+    Least squares for a constant and for a straight line has a closed form, so those two
+    columns are a clean check on the whole chain that feeds them - the trim, the distances,
+    the eight-point series, the AIC/BIC expressions. They agree to 1e-12.
+
+    The four sigmoid models are fitted iteratively from the same starting values with the
+    same evaluation budget, and land in slightly different places on a flat surface under a
+    different scipy version. On the reference data that difference is worth exactly one
+    feature out of 471, and BC4 differs outright because the published run's BC4 was the
+    LL4 duplicate.
+    """
+    from cdr_fs.fit import fit_series
+    from cdr_fs.config import load_config
+
+    config = load_config(write_config(tmp_path, table=INPUT))
+    mine, _ = fit_series(config, published_run["contrasts"])
+    merged = mine.merge(
+        published_fit_table(), on=["feature", "stratum", "model"], suffixes=("_mine", "_pub")
+    )
+
+    for model in ("Con", "Lin"):
+        rows = merged[merged["model"] == model]
+        assert len(rows) == 1880, model
+        ours = rows["aic_mine"].to_numpy(float)
+        theirs = rows["aic_pub"].to_numpy(float)
+        finite = np.isfinite(ours) & np.isfinite(theirs)
+        scale = np.maximum(np.abs(ours[finite]), np.abs(theirs[finite]))
+        relative = np.abs(ours[finite] - theirs[finite]) / np.where(scale > 0, scale, 1.0)
+        assert relative.max() < 1e-12, f"{model}: worst {relative.max():.3e}"

@@ -6,9 +6,9 @@ treated cell populations.
 
 > **Status: under construction.** Everything up to and including the retention rule is in
 > place; the diagnostic plots, the correlation pruning and the subsetting step are not. See
-> [Status](#status) for what runs today. The EMD stage reproduces the published tables
-> exactly; the selection stage reproduces the *corrected* pipeline rather than the article,
-> for the reason given under [Which run is "published"?](#which-run-is-published).
+> [Status](#status) for what runs today. Both stages that have a published output to check
+> against reproduce it exactly: the EMD tables, and - given the published fit table - the
+> selected feature lists. See [Which run is "published"?](#which-run-is-published).
 
 ## The method
 
@@ -148,14 +148,8 @@ scripts:
 - **The two halves of the retention rule.** They use *different* quantifiers: a positive
   slope on **any** stratum, non-constant on **all** strata. Separate keys make that
   visible, and let you choose `all`/`all` for the stricter rule.
-- **The fit's x-axis.** `rank` fits against the position of a level in the series, which
-  is what the published run did; `dose` fits against the actual doses. These are *not*
-  equivalent, not even for a geometric series — the four sigmoid models evaluate `log(x)`
-  themselves, so `dose` is the one that gives a standard log-logistic in dose. Only `Lin`
-  and `Con` are invariant, and the sign of the linear slope is preserved either way, so the
-  slope half of the retention rule is unaffected while the sigmoid models simply fit less
-  well against rank. Conservative rather than wrong — and the default, because it is what
-  was published.
+- **The fit's x-axis.** See [Spacing the exposure axis](#spacing-the-exposure-axis). It
+  deserves its own section, because the obvious reading of it is wrong.
 
 ### One warning worth reading before you write `metadata_patterns`
 
@@ -185,7 +179,45 @@ minority groups are visible:
 It also warns about any pattern that matched nothing, since that is how a metadata column
 quietly turns into a feature.
 
-### Pooling replicates
+### Spacing the exposure axis
+
+`[fit] x_scale` decides where along the x-axis the exposure levels sit. `rank` puts them at
+0, 1, 2, ... - evenly spread, which is what the published run did. `dose` puts them at the
+values in `[design] dose`.
+
+The catch is that the four sigmoid models evaluate `log(x)` themselves, so the axis they see
+is not the axis you supplied. For the reference dilution series:
+
+```
+x_scale = rank  ->  log(x) = [-23.03, 0, 0.69, 1.10, 1.39, 1.61, 1.79, 1.95]
+x_scale = dose  ->  log(x) = [  2.99, 3.55, 4.11, 4.67, 5.23, 5.79, 6.35, 6.91]
+                             spacing 0.559616 throughout - exactly even
+```
+
+So **`dose` is what spaces the levels evenly in log-concentration**, and `rank` is not: it
+flings the lowest exposure out to `log(1e-10)` while the other seven span two units. Neither
+choice dominates, because the two halves of the retention rule want different things:
+
+| the series really is... | `rank` | `dose` |
+|---|---|---|
+| a logistic in log-dose (textbook DRC) | LL4 AIC -41 | LL4 AIC **-298** |
+| a straight line in log-dose | Lin AIC **-573** | Lin AIC -19 |
+
+`rank` suits the **linear** model, because for a geometric series the rank *is* log-dose up to
+an affine shift - and the linear slope is what the retention rule tests the sign of. `dose`
+suits the **sigmoids**, which become proper log-logistic curves in concentration. The sign of
+the linear slope is positive either way, so the slope test is unaffected by the choice; what
+changes is how easily a sigmoid beats the constant model.
+
+`rank` stays the default because it is what was published. Switch to `dose` when the exposure
+series is not geometrically spaced - rank is then not a transform of log-dose at all, and the
+sigmoid fits are being handed a meaningless axis. `examples/published.ini` already carries the
+dose vector, so `x_scale = dose` works there with no further edits.
+
+There is deliberately no `log_dose`: it would hand `log(dose)` to models that take a logarithm
+themselves, and it is NaN for any dose below 1.
+
+## Pooling replicates
 
 When computing the distance between control and exposure level *C*, what counts as "the
 population"? `per_replicate = false`, the default, merges all replicates at that level into
@@ -203,42 +235,50 @@ available; the default reproduces the paper.
 
 ## Which run is "published"?
 
-There are two, and they differ. This matters because "the defaults reproduce the published
-run" is the invariant the whole extraction rests on, so it has to be said which run.
+There are two, and they differ, which matters because "the defaults reproduce the published
+run" is the invariant this extraction rests on.
 
-* **The article's run** — archived as HCS-proc release
-  [`v1`](https://doi.org/10.5281/zenodo.17949848).
-* **The corrected pipeline** — HCS-proc `main`, which carries two changes made after
-  publication:
-  * BC4 was implemented as `c + (d-c)/(1+exp(...))`, which is algebraically the
-    four-parameter log-logistic — a duplicate of LL4. The six-model comparison was really
-    five distinct models. It is now the true Brain–Cousens form, whose `f * x` term is what
-    makes it a hormesis model.
-  * The highest exposure is withheld from curve fitting, so the series is eight points
-    rather than nine, keeping concentration-response detection inside the sub-cytotoxic
-    window.
+* **The article's run** - archived as HCS-proc release
+  [`v1`](https://doi.org/10.5281/zenodo.17949848). It reports **182** retained features.
+* **The corrected pipeline** - HCS-proc `main`, which after publication replaced the BC4
+  model. It had been implemented as `c + (d-c)/(1+exp(...))`, algebraically the
+  four-parameter log-logistic - a duplicate of LL4, so the six-model comparison was really
+  five distinct models. It is now the true Brain-Cousens form, whose `f * x` term is what
+  makes it a hormesis model.
 
 `examples/published.ini` follows **the corrected pipeline**, because that is what the
-inherited scripts do. Both changes alter which features survive selection — deliberately, as
-the HCS-proc commit messages state.
+inherited scripts do, and it retains **199** features. Every part of that difference is
+accounted for:
 
-What that means for each stage:
-
-| Stage | Status against the published output |
+| fit table fed to the retention rule | retained |
 |---|---|
-| EMD | **Reproduced exactly.** Neither correction touches this stage, so it matches release `v1`'s own EMD tables: 16,946 + 11,292 distances, every population size equal. |
-| Selection | Reproduces the **corrected** pipeline, and yields 199 features. The article reports 182, which belongs to the uncorrected run. |
+| the published `model_fit_results.txt`, unaltered | **182 - the published set, exactly** |
+| the same, but with BC4 recomputed in its corrected form | 198 |
+| `cdr_FS`'s own fit table | 199 |
+| `cdr_FS`'s own, but with BC4 taken from the published run | 183 |
+| `cdr_FS`'s own, with all four sigmoids from the published run | **182 - the published set, exactly** |
 
-The 182 is not yet accounted for, and it is worth being straight about that rather than
-tuning until a number matches. Restoring both pre-correction behaviours moves *away* from
-it — the article's BC4 with all nine contrasts gives 292 — and no combination of the
-retention rule's quantifiers reaches it either (`any`/`any` 444, `any`/`all` 199, `all`/`any`
-273, `all`/`all` 153). The article's sentence is also "182 of the 781 features extracted per
-cell", and 781 is the CellProfiler extraction count, before the illogical and correlated
-Haralick features were removed upstream; the table that actually enters selection carries
-471. So the figure may not be a 471-in count at all. Settling it needs the published
-`model_fit_results.txt`, which would show row by row whether the difference is in the
-fitting or in the rule.
+So the BC4 correction accounts for sixteen of the seventeen extra features, and the
+seventeenth is iterative-fit drift: `BC5`, `LL4` and `WB1.4` are fitted from the same starting
+values with the same evaluation budget, but a different scipy version stops somewhere slightly
+different on a flat surface. One feature in 471.
+
+The models with a closed-form least squares - `Lin` and `Con`, which are also the two the
+retention rule consults - agree with the published fit table to **1e-12**. That is the check
+that matters, because it covers everything upstream of it: the trim, the distances, the
+eight-point series and the information criteria.
+
+`tests/test_golden_selection.py` asserts the exact 182 and 374 feature sets. It needs only the
+1 MB published fit table and runs in a second.
+
+### An aside that is really a check
+
+The published run produced two selections, one per gate: across all days, and on D5 alone.
+Neither list contains the other - `counts_RelateLysoCell` is retained across all days but not
+on D5, and `counts_RelateMitoCell` the reverse. Only the hybrid rule can do that. A positive
+slope is required on **any** stratum, so the all-days gate has four chances where D5 has one;
+if both tests used `all`, the D5 set would necessarily contain the all-days set. The asymmetry
+is therefore visible in the published output itself, not merely in a reading of the code.
 
 ## Scope
 
