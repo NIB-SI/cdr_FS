@@ -252,6 +252,11 @@ cdr-fs plot         -c config.ini          # draw the figures from whatever tabl
 so that a bad one fails before the first stage rather than between two of them. Three
 departures from "all of them", each stated in the run's own header:
 
+- **`emd`, `fit` and `select` run only when `[select] enabled` is true.** Turned off, no
+  concentration–response selection happens at all and every feature carries forward into the
+  filtering stages — the tool as a plain redundancy and sparsity filter. All three go together,
+  because `select` needs `fit` and `fit` needs `emd`, and with nothing reading their tables the
+  two expensive stages would be work for its own sake.
 - **`correlation` runs only when `[correlation] enabled` is true.** Turned off it is reported
   as `off` rather than as a failure, and `drop_missing` applies `selected.txt` instead of
   `representatives.txt`.
@@ -259,6 +264,10 @@ departures from "all of them", each stated in the run's own header:
   missing-data filter drops anything; the stage writes the final table either way, so a run
   always ends in one.
 - **`trim` is never part of a run**, for the reason below.
+
+`plot` is given only the figures this run's own tables can support, so a report that says
+nothing was fitted cannot contain a previous run's distances. With nothing left to draw, `plot`
+is dropped from the plan and said to be.
 
 ### `trim` is optional
 
@@ -271,7 +280,8 @@ why `run` does not call it.
 
 `selected.txt` if you stop after `select`; `representatives.txt` if you collapse correlated
 features; `final_<list>_retained.txt` if you also apply the missing-data filter. Each is one
-feature name per line.
+feature name per line. `<list>` is whichever list narrowed the features last — `all` when
+neither `select` nor `correlation` did, so a filter-only run ends in `final_all_retained.txt`.
 
 ### When a stage refuses
 

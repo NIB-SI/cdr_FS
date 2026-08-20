@@ -36,6 +36,11 @@ FIGURES = ("fits", "emd", "baseline", "dendrogram")
 #: artefact rather than an input - 3.9 GB of one on the reference dataset.
 CHAIN = ("emd", "fit", "select", "correlation", "drop_missing", "plot")
 
+#: The three that are the concentration-response selection. `[select] enabled` turns all
+#: three off together, because `select` needs `fit` and `fit` needs `emd`, and with nothing
+#: reading their tables the two expensive stages are work for its own sake.
+SELECTION = ("emd", "fit", "select")
+
 #: Width of the rules `run` prints between stages.
 _RULE_WIDTH = 78
 
@@ -293,22 +298,32 @@ def _describe(config: Config) -> list[str]:
         _field("x_scale", fit.x_scale),
         _field("rank_by", fit.rank_by),
         "[select]",
-        _field(
-            "slope_positive",
-            f"{config.select.slope_positive}  (a positive linear slope on "
-            f"{'at least one' if config.select.slope_positive == 'any' else 'every'} stratum)",
-        ),
-        _field(
-            "nonconstant",
-            f"{config.select.nonconstant}  (the constant model is not the best fit on "
-            f"{'at least one' if config.select.nonconstant == 'any' else 'every'} stratum)",
-        ),
-        _field(
-            "strata",
-            ", ".join(config.select.strata)
-            if config.select.strata
-            else "(every stratum present in the data)",
-        ),
+        _field("enabled", str(config.select.enabled).lower()),
+    ]
+    # As for [trim] and [correlation]: the rule is only described when it is applied, so a
+    # reader cannot mistake a printed quantifier for a gate that ran.
+    if config.select.enabled:
+        lines += [
+            _field(
+                "slope_positive",
+                f"{config.select.slope_positive}  (a positive linear slope on "
+                f"{'at least one' if config.select.slope_positive == 'any' else 'every'} "
+                f"stratum)",
+            ),
+            _field(
+                "nonconstant",
+                f"{config.select.nonconstant}  (the constant model is not the best fit on "
+                f"{'at least one' if config.select.nonconstant == 'any' else 'every'} "
+                f"stratum)",
+            ),
+            _field(
+                "strata",
+                ", ".join(config.select.strata)
+                if config.select.strata
+                else "(every stratum present in the data)",
+            ),
+        ]
+    lines += [
         "[correlation]",
         _field("enabled", str(config.correlation.enabled).lower()),
     ]
@@ -511,6 +526,40 @@ def _list_path(config: Config, name: str) -> Path:
     return Path(config.output.dir) / f"{name}.txt"
 
 
+def _features_stem(config: Config) -> str | None:
+    """Which list the filtering stages apply, by name, or None for every feature.
+
+    `correlation` narrows to its representatives and `select` to its retained list, so the
+    later stage wins. With both switched off nothing has narrowed anything, and the whole
+    feature set is what there is to filter.
+    """
+    if config.correlation.enabled:
+        return "representatives"
+    if config.select.enabled:
+        return "selected"
+    return None
+
+
+def _features_source(config: Config, override: str | None) -> Path | None:
+    """The feature list `drop_missing` applies, or None when that is every feature."""
+    if override:
+        source = Path(override)
+        if not source.is_file():
+            raise ConfigError(f"--features file not found: {source}")
+        return source
+    stem = _features_stem(config)
+    if stem is None:
+        return None
+    source = _list_path(config, stem)
+    if not source.exists():
+        producer = "correlation" if config.correlation.enabled else "select"
+        raise ConfigError(
+            f"{source} is missing - run `cdr-fs {producer} -c {config.path}` first, "
+            f"or name a list with --features"
+        )
+    return source
+
+
 def _write_list(config: Config, features: list[str], name: str) -> Path:
     destination = Path(config.output.dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -602,6 +651,15 @@ def _select(args: argparse.Namespace) -> int:
 def _stage_select(config: Config) -> int:
     from cdr_fs.select import select_features
 
+    # Same shape as `trim` and `correlation`: `run` reads the switch itself and never calls
+    # the stage when it is off, so this is only ever reached by `cdr-fs select`.
+    if not config.select.enabled:
+        print(
+            "error: [select] enabled is false, so there is nothing to do",
+            file=sys.stderr,
+        )
+        return 3
+
     fits = _read_stage(config, "fit", "fit")
     retained, evidence, report = select_features(config, fits)
     print(report.summary())
@@ -629,19 +687,26 @@ def _stage_correlation(config: Config) -> int:
         )
         return 3
 
-    selected = _list_path(config, "selected")
-    if not selected.exists():
-        raise ConfigError(
-            f"{selected} is missing - run `cdr-fs select -c {config.path}` first"
-        )
-    features = read_feature_list(selected)
-    if not features:
-        print(
-            f"error: {selected.name} is empty, so there is nothing to collapse",
-            file=sys.stderr,
-        )
-        return 3
-    frame, _ = _prepare(config)
+    if config.select.enabled:
+        selected = _list_path(config, "selected")
+        if not selected.exists():
+            raise ConfigError(
+                f"{selected} is missing - run `cdr-fs select -c {config.path}` first"
+            )
+        features = read_feature_list(selected)
+        if not features:
+            print(
+                f"error: {selected.name} is empty, so there is nothing to collapse",
+                file=sys.stderr,
+            )
+            return 3
+        frame, _ = _prepare(config)
+    else:
+        # No selection ran, so there is no retained list to collapse: the redundancy
+        # question is asked of the whole feature set instead.
+        print("collapsing every feature ([select] enabled is false)")
+        frame, resolved = _prepare(config)
+        features = resolved.features
 
     kept, clusters, tree, report = collapse_correlated(config, frame, features)
     print(report.summary())
@@ -658,30 +723,25 @@ def _drop_missing(args: argparse.Namespace) -> int:
 def _stage_drop_missing(config: Config, *, features: str | None = None) -> int:
     from cdr_fs.drop_missing import read_feature_list, restrict_table
 
-    if features:
-        source = Path(features)
-        if not source.is_file():
-            raise ConfigError(f"--features file not found: {source}")
+    source = _features_source(config, features)
+    if source is None:
+        # Neither stage that narrows the feature set ran, so there is no list to apply and
+        # the whole set is the answer. `_prepare` is where it comes from.
+        print("applying every feature (no selection, no correlation collapsing)")
+        frame, resolved = _prepare(config)
+        names, stem = resolved.features, "all"
     else:
-        enabled = config.correlation.enabled
-        source = _list_path(config, "representatives" if enabled else "selected")
-        if not source.exists():
-            raise ConfigError(
-                f"{source} is missing - run `cdr-fs "
-                f"{'correlation' if enabled else 'select'}"
-                f" -c {config.path}` first, or name a list with --features"
+        print(f"applying {source.name}")
+        names = read_feature_list(source)
+        if not names:
+            # Otherwise the output is a metadata-only table, which looks like a result.
+            print(
+                f"error: {source.name} is empty, so there are no features to write",
+                file=sys.stderr,
             )
-    print(f"applying {source.name}")
-
-    names = read_feature_list(source)
-    if not names:
-        # Otherwise the output is a metadata-only table, which looks like a result.
-        print(
-            f"error: {source.name} is empty, so there are no features to write",
-            file=sys.stderr,
-        )
-        return 3
-    frame, resolved = _prepare(config)
+            return 3
+        frame, resolved = _prepare(config)
+        stem = source.stem
     final, quality, report = restrict_table(
         frame,
         resolved.metadata,
@@ -694,7 +754,7 @@ def _stage_drop_missing(config: Config, *, features: str | None = None) -> int:
 
     # Named for the list applied, not just for the stage: two lists over one table are a
     # normal thing to run, and they must not overwrite each other's output.
-    name = f"final_{source.stem}"
+    name = f"final_{stem}"
     _write(config, final, name)
     _write(config, quality, f"{name}_features")
     _write_list(config, list(quality.loc[~quality["dropped"], "feature"]), f"{name}_retained")
@@ -851,11 +911,16 @@ def _run_chain(config: Config) -> int:
     """
     from cdr_fs.drop_missing import read_feature_list
 
-    correlated = config.correlation.enabled
+    selecting, correlated = config.select.enabled, config.correlation.enabled
     # The rule `_stage_drop_missing` applies to pick its input list, so that `plot` and
     # the closing line name the file this run will actually have written.
-    stem = "representatives" if correlated else "selected"
+    stem = _features_stem(config) or "all"
     retained = _list_path(config, f"final_{stem}_retained")
+    # Only the figures this run's own tables can support. Left to draw whatever it finds,
+    # `plot` would put a previous run's distances in a report that says nothing was fitted.
+    drawable = (["fits", "emd", "baseline"] if selecting else []) + (
+        ["dendrogram"] if correlated else []
+    )
     stages = {
         "emd": lambda: _stage_emd(config),
         "fit": lambda: _stage_fit(config),
@@ -864,16 +929,24 @@ def _run_chain(config: Config) -> int:
         "drop_missing": lambda: _stage_drop_missing(config),
         # With the list `drop_missing` has just written. `plot` given no list draws every
         # feature in the distance table, which on a real run is hundreds of pages.
-        "plot": lambda: _stage_plot(config, features=str(retained)),
+        "plot": lambda: _stage_plot(
+            config, only=",".join(drawable), features=str(retained)
+        ),
     }
 
-    # The switch is read here rather than left to the stage: `correlation` refuses with
-    # exit 3 when it is off, and a configuration skip is not a failure. Reading it here
-    # is also what makes any exit 3 the chain does see a genuine stop.
-    planned = [stage for stage in CHAIN if correlated or stage != "correlation"]
-    status = dict.fromkeys(CHAIN, "not reached")
+    # The switches are read here rather than left to the stages, which refuse with exit 3
+    # when they are off - and a configuration skip is not a failure. Reading them here is
+    # also what makes any exit 3 the chain does see a genuine stop.
+    off = set()
+    if not selecting:
+        off |= set(SELECTION)
     if not correlated:
-        status["correlation"] = "off"
+        off.add("correlation")
+    if not drawable:
+        off.add("plot")
+    planned = [stage for stage in CHAIN if stage not in off]
+    status = dict.fromkeys(CHAIN, "not reached")
+    status.update(dict.fromkeys(off, "off"))
 
     for line in _run_header(config, planned):
         print(line)
@@ -899,11 +972,15 @@ def _run_chain(config: Config) -> int:
         print(_field("feature list", str(retained)))
         print(_field("final table", str(_table_path(config, f"final_{stem}"))))
         if not kept:
-            # The chain finished and produced nothing. Say where the reason is written.
-            print(
-                "  nothing survived - select_evidence.tsv carries the linear slope and the "
-                "winning model for every feature and stratum"
+            # The chain finished and produced nothing. Say where the reason is written -
+            # but only where there is something written: no selection, no evidence table.
+            where = (
+                "select_evidence.tsv carries the linear slope and the winning model for "
+                "every feature and stratum"
+                if config.select.enabled
+                else f"final_{stem}_features.tsv says which rule removed each feature"
             )
+            print(f"  nothing survived - {where}")
     return code
 
 
@@ -923,8 +1000,15 @@ def _run_header(config: Config, planned: list[str]) -> list[str]:
         _field("stages", ", ".join(planned)),
     ]
     absent = []
+    if "select" not in planned:
+        absent.append(
+            "emd, fit, select  ([select] enabled is false, so nothing is fitted and "
+            "every feature carries forward)"
+        )
     if "correlation" not in planned:
         absent.append("correlation  ([correlation] enabled is false)")
+    if "plot" not in planned:
+        absent.append("plot  (this run writes no table any figure is drawn from)")
     # Two different facts wear the same label. With trimming on, `trim` is absent because
     # its output is an inspection copy no stage reads; with it off, the stage would refuse,
     # and pointing at a command that exits 3 would be worse than saying nothing.

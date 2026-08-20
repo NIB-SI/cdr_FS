@@ -43,6 +43,7 @@ None of it is required to exist. What changes is what you can ask.
 | **two levels** | — | This design cannot be run: `[select]` requires both `Lin` and `Con`, and `Lin` needs three points |
 | **no need to trim** | `[trim] enabled = false` | Nothing, except that `[correlation] aggregate_by` no longer has `[trim] scope` to default to, so set it explicitly |
 | **no wish to collapse correlated features** | `[correlation] enabled = false` | The redundancy collapse. `cdr-fs drop_missing` then applies `selected.txt` instead of `representatives.txt`, and says which it used |
+| **no concentration–response question at all** — you want the redundancy and sparsity filtering over the whole feature set | `[select] enabled = false` | The method. `emd`, `fit` and `select` are skipped, every feature carries forward, and the final table is named `final_all` because no list narrowed it. `[design]` is still required and still checked against the data; what goes is the constraint that the models be identifiable, so a three-level design runs |
 
 Two of these deserve spelling out.
 
@@ -102,6 +103,7 @@ enabled = false
 baseline = none
 [fit]
 [select]
+enabled = true
 [correlation]
 enabled = false
 [drop_missing]

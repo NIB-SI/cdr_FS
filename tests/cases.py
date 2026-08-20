@@ -49,7 +49,7 @@ BASE: dict[str, dict[str, str]] = {
     },
     "emd": {},
     "fit": {},
-    "select": {"strata": "D1,D5,D7,D9"},
+    "select": {"enabled": "true", "strata": "D1,D5,D7,D9"},
     "correlation": {"enabled": "true"},
     "drop_missing": {"enabled": "false"},
     "output": {"dir": "<output>"},

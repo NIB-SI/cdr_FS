@@ -36,7 +36,8 @@ fall-back; unknown keys are rejected for the same reason.
 | `fit` | `models` | all six | any subset of `BC4,BC5,LL4,WB1.4,Lin,Con` |
 | | `x_scale` | `rank` | `rank` (position in the series) or `dose` |
 | | `rank_by` | `aic_plus_bic` | `aic_plus_bic`, `aic` or `bic` |
-| `select` | `slope_positive` | `any` | positive linear slope on `any` or `all` strata |
+| `select` | `enabled` | *required* | `false` skips `emd`, `fit` and `select` and carries every feature into the filtering stages — the tool as a plain redundancy and sparsity filter |
+| | `slope_positive` | `any` | positive linear slope on `any` or `all` strata |
 | | `nonconstant` | `all` | constant model beaten on `any` or `all` strata |
 | | `strata` | *(all present)* | which strata the rule is applied over |
 | `correlation` | `enabled` | *required* | |

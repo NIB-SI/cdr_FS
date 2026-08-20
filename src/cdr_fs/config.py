@@ -68,7 +68,10 @@ _ALLOWED: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     ),
     "emd": (frozenset(), frozenset({"contrasts", "baseline", "per_replicate"})),
     "fit": (frozenset(), frozenset({"models", "x_scale", "rank_by"})),
-    "select": (frozenset(), frozenset({"slope_positive", "nonconstant", "strata"})),
+    "select": (
+        frozenset({"enabled"}),
+        frozenset({"slope_positive", "nonconstant", "strata"}),
+    ),
     "correlation": (
         frozenset({"enabled"}),
         frozenset(
@@ -155,6 +158,9 @@ class FitSpec:
 
 @dataclass(frozen=True)
 class SelectSpec:
+    #: False runs no concentration-response selection at all: the filtering stages start
+    #: from every feature instead of from a retained list.
+    enabled: bool
     slope_positive: str
     nonconstant: str
     #: None means every stratum present in the data.
@@ -502,8 +508,11 @@ def load_config(path: str | Path) -> Config:
     design_spec = _read_design(reader)
     trim_spec = _read_trim(reader)
     emd_spec = _read_emd(reader, design_spec, schema_spec)
-    fit_spec = _read_fit(reader, design_spec)
-    select_spec = _read_select(reader, schema_spec, fit_spec)
+    # Read before both, because it decides which of their cross-checks apply: a run that
+    # fits nothing does not need its models to be identifiable.
+    selecting = reader.boolean("select", "enabled")
+    fit_spec = _read_fit(reader, design_spec, selecting=selecting)
+    select_spec = _read_select(reader, schema_spec, fit_spec, enabled=selecting)
     correlation_spec = _read_correlation(reader, trim_spec)
     drop_missing_spec = _read_drop_missing(reader)
     output_spec = _read_output(reader)
@@ -778,7 +787,7 @@ def _read_emd(
     )
 
 
-def _read_fit(reader: _Reader, design: DesignSpec) -> FitSpec:
+def _read_fit(reader: _Reader, design: DesignSpec, *, selecting: bool) -> FitSpec:
     models = reader.unique(
         "fit", "models", reader.items("fit", "models", default=",".join(MODELS))
     )
@@ -820,8 +829,11 @@ def _read_fit(reader: _Reader, design: DesignSpec) -> FitSpec:
             "fit", "rank_by", RANK_BY, default="aic_plus_bic"
         )
     )
+    # Only when something will actually be fitted. With [select] enabled false the models
+    # are never called, and refusing a four-level design for a model nobody runs would be
+    # demanding a fix to an irrelevant key.
     fitted = len(design.fitted_levels)
-    if fitted <= spec.max_params:
+    if selecting and fitted <= spec.max_params:
         worst = max(spec.models, key=lambda model: MODEL_PARAMS[model])
         raise reader.fail(
             "fit",
@@ -834,20 +846,20 @@ def _read_fit(reader: _Reader, design: DesignSpec) -> FitSpec:
 
 
 def _read_select(
-    reader: _Reader, schema: SchemaSpec, fit: FitSpec
+    reader: _Reader, schema: SchemaSpec, fit: FitSpec, *, enabled: bool
 ) -> SelectSpec:
     slope_positive = reader.choice(
         "select", "slope_positive", QUANTIFIERS, default="any"
     )
     nonconstant = reader.choice("select", "nonconstant", QUANTIFIERS, default="all")
-    if "Lin" not in fit.models:
+    if enabled and "Lin" not in fit.models:
         raise reader.fail(
             "select",
             "slope_positive",
             f"is {slope_positive!r}, which tests the sign of the linear slope, but "
             f"[fit] models does not include Lin",
         )
-    if "Con" not in fit.models:
+    if enabled and "Con" not in fit.models:
         raise reader.fail(
             "select",
             "nonconstant",
@@ -863,6 +875,7 @@ def _read_select(
             f"experiment has a single stratum",
         )
     return SelectSpec(
+        enabled=enabled,
         slope_positive=slope_positive,
         nonconstant=nonconstant,
         strata=reader.unique("select", "strata", strata) if strata else None,
