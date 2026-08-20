@@ -109,6 +109,10 @@ dir = /PATH/TO/results
 Six exposure levels, because that is what all six models need; one metadata column, one
 control, everything else defaulted. `cdr-fs check` lists the twenty-odd keys it filled in.
 
+That is the floor, not the starting point. [`examples/template.ini`](../examples/template.ini)
+is the file to copy: the same ten sections with every optional key written out beside its
+default, and a comment on each saying what it means for the experiment.
+
 ## What the configuration cannot say
 
 Some of these fail loudly. The ones that do not are the ones worth knowing.

@@ -1,11 +1,41 @@
 # Method notes
 
-Four decisions inside the pipeline that move the numbers, and the reasoning behind the
-defaults: how replicates are pooled before a distance is computed, how near-redundant
-features are collapsed to one representative, which features are dropped from the final
-table, and what the three diagnostic figures show. Read these when you are deciding whether
-a default suits your data, or when an output is not the one you expected. The keys named
-throughout are documented in [Configuration](configuration.md).
+Five decisions inside the pipeline that move the numbers, and the reasoning behind the
+defaults: which values are trimmed away before anything is measured, how replicates are
+pooled before a distance is computed, how near-redundant features are collapsed to one
+representative, which features are dropped from the final table, and what the three
+diagnostic figures show. Read these when you are deciding whether a default suits your data,
+or when an output is not the one you expected. The keys named throughout are documented in
+[Configuration](configuration.md).
+
+## Trimming
+
+The first data-level step, and the only one that changes the values every later stage reads.
+Per feature, within each group of `[trim] scope`, values outside
+`[lower_percentile, upper_percentile]` are discarded — quality control against objects the
+imaging and segmentation measured badly, applied to the measurements rather than to the
+objects.
+
+Two properties follow from *values* being removed rather than rows, and both surface later:
+
+- **N differs per feature**, so a trimmed table is ragged. That is what
+  [dropping features](#dropping-features-from-the-final-table) exists to clean up afterwards,
+  and it is what `[correlation] fill_missing` has to fill.
+- **Nothing is materialised.** Every stage that needs cell-level data reads `[input] table`
+  and applies the trim itself, so the trimmed table is never an input to anything.
+  `cdr-fs trim` writes a copy out for inspection — on the reference dataset another 3.9 GB —
+  and `cdr-fs run` therefore does not call it.
+
+`[trim] scope` should name one physical unit of the assay, so that the percentiles are taken
+across objects that were handled together; in the published run that is one well of one
+replicate on one day. The unit has to hold enough objects for a percentile to mean something.
+The committed fixture holds one to eight cells per well, and trimming it the published way to
+`[p2.5, p97.5]` removes 55% of its values — which is why `examples/quickstart.ini` turns
+trimming off, and the one place that file departs from the method rather than from the scale.
+
+`[correlation] aggregate_by` defaults to `[trim] scope`, on the reasoning that the unit worth
+trimming within is the unit worth correlating across. With trimming off there is no scope to
+default to, and `[correlation] aggregate_by` becomes required.
 
 ## Pooling replicates
 

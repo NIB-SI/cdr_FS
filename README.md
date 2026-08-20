@@ -75,16 +75,23 @@ dataset, committed so that there is something to run before you download 121 GB.
 repository root:
 
 ```bash
-cdr-fs check        -c examples/quickstart.ini --scan
+cdr-fs check -c examples/quickstart.ini --scan
+cdr-fs run   -c examples/quickstart.ini
+```
+
+About fifty seconds in total, most of it in `fit`. Results land in `results/`.
+
+`run` is the chain in one command, and every stage is also a command of its own. These six
+are the same run:
+
+```bash
 cdr-fs emd          -c examples/quickstart.ini
 cdr-fs fit          -c examples/quickstart.ini
 cdr-fs select       -c examples/quickstart.ini
 cdr-fs correlation  -c examples/quickstart.ini
 cdr-fs drop_missing -c examples/quickstart.ini
-cdr-fs plot         -c examples/quickstart.ini --only fits --features results/representatives.txt
+cdr-fs plot         -c examples/quickstart.ini --features results/final_representatives_retained.txt
 ```
-
-About fifty seconds in total, most of it in `fit`. Results land in `results/`.
 
 ### Start with `check`
 
@@ -123,7 +130,8 @@ declared actually occur in the data.
 
 ### Then the chain
 
-Each stage prints what it measured and what it could not:
+`run` executes the stages in order and prints each one's own report under a rule. Each stage
+says what it measured and what it could not:
 
 ```
 $ cdr-fs emd -c examples/quickstart.ini
@@ -158,6 +166,20 @@ than taking them on trust: 36 comparisons is 4 strata × 9 exposure levels, and 
 above says why — `select` says "of 19" rather than "of 20" because `fit` could not fit one
 feature on any stratum.
 
+A run closes on a ledger of what ran and the file that answers the question:
+
+```
+-- summary -------------------------------------------------------------------
+  emd               ok
+  fit               ok
+  select            ok
+  correlation       ok
+  drop_missing      ok
+  plot              ok
+  trim              not run
+retained 9 feature(s) -> results/final_representatives_retained.txt
+```
+
 ### What came out
 
 The funnel for this run:
@@ -181,23 +203,29 @@ and the winning model for every feature and stratum.
 - **`fit` prints a scipy `OptimizeWarning` to stderr.** Fits that genuinely fail are counted
   on stdout — "20 fit(s) did not converge" — and are expected; some shapes do not fit some
   series.
-- **`plot` without `--features` draws every feature in the distance table.** Here that is 15
-  figures and 8 MB; on a full run it is hundreds of pages.
+- **`plot` on its own draws every feature in the distance table.** Here that is 15 figures
+  and 8 MB; on a full run it is hundreds of pages. Inside `run` it is given the retained
+  list, which is 7 figures here.
 
-**This configuration is a smoke test of the tool, not a reproduction of the method.** It it
+**This configuration is a smoke test of the tool, not a reproduction of the method.** It
 turns trimming off, because the fixture holds one to eight cells per well and a within-well
 percentile on two values discards both, and it fits all nine exposure levels rather than
 withholding the top one. The method as it was published is
-[`examples/published.ini`](examples/published.ini), and that is the file to copy for real work.
+[`examples/published.ini`](examples/published.ini). For a dataset that is not that one, copy
+[`examples/template.ini`](examples/template.ini) instead: the same ten sections, every switch
+written out beside its default, and a comment on each saying what it means for the
+experiment.
 
 ## The pipeline
 
-One `.ini` file describes a run, and `-c/--config` points at it from anywhere. Each stage
-reads the previous one's output from `[output] dir` under a stable name.
+One `.ini` file describes a run — start from [`examples/template.ini`](examples/template.ini)
+— and `-c/--config` points at it from anywhere. Each stage reads the previous one's output
+from `[output] dir` under a stable name.
 
 ```bash
 cdr-fs check        -c config.ini          # validate the configuration, report the schema
 cdr-fs check        -c config.ini --scan   # also confirm the design occurs in the data
+cdr-fs run          -c config.ini          # the six stages below, in order
 cdr-fs trim         -c config.ini          # write the trimmed table  (optional — see below)
 cdr-fs emd          -c config.ini          # distances per feature, stratum and contrast
 cdr-fs fit          -c config.ini          # fit the models to each distance series
@@ -216,11 +244,25 @@ cdr-fs plot         -c config.ini          # draw the figures from whatever tabl
 | `drop_missing` | `final_<list>.tsv` — the table restricted to that list; `final_<list>_features.tsv` — how much data each column holds and which rule removed it; `final_<list>_retained.txt` |
 | `plot` | `fit_<stratum>_part_<n>.png`; `emd.png` and `emd_baseline.png`; `dendrogram.png` |
 
+### What `run` runs, and what it leaves out
+
+`emd`, `fit`, `select`, `correlation`, `drop_missing`, `plot`, reading the configuration once
+so that a bad one fails before the first stage rather than between two of them. Three
+departures from "all of them", each stated in the run's own header:
+
+- **`correlation` runs only when `[correlation] enabled` is true.** Turned off it is reported
+  as skipped, and `drop_missing` applies `selected.txt` instead of `representatives.txt`.
+- **`drop_missing` always runs**, whatever its switch says. The switch decides whether the
+  missing-data filter drops anything; the stage writes the final table either way, so a run
+  always ends in one.
+- **`trim` is never part of a run**, for the reason below.
+
 ### `trim` is optional
 
 Every stage that needs cell-level data reads `[input] table` and applies the configured trim
 itself, so there is no need to materialise a trimmed copy — on the reference dataset that
-copy would be another 3.9 GB. `cdr-fs trim` exists to write it out for inspection.
+copy would be another 3.9 GB. `cdr-fs trim` exists to write it out for inspection, which is
+why `run` does not call it.
 
 ### Which file is the answer?
 
@@ -233,7 +275,9 @@ feature name per line.
 A stage refuses rather than write an artefact that would read as a result: `fit` will not
 write a table when no series was complete, and `correlation` and `drop_missing` will not run
 on an empty feature list. Exit codes are 0 for success, 2 for a configuration error, 3 for
-nothing to do.
+nothing to do. Inside `run` a refusal stops the chain: the stage's message is printed, the
+summary marks the rest `not reached`, and the run exits 3. A stage the configuration turned
+off is not a refusal — it is a declared outcome, and the run still exits 0.
 
 There is one module per stage, named for it — `emd.py`, `fit.py`, `select.py`,
 `correlation.py`, `drop_missing.py`, `trim.py`, `plots.py` — with `config.py` and `schema.py`

@@ -28,7 +28,7 @@ pytest                      # everything that needs no data
 CDR_FS_GOLDEN=1 pytest      # and the gates that read the published tables
 ```
 
-The suite is deliberately small. It exists to hold these four numbers and the two shipped
+The suite is deliberately small. It exists to hold these four numbers and the three shipped
 configurations, and not to describe the package.
 
 Three notes on what those numbers are and are not.
@@ -56,6 +56,32 @@ a per-subsample decision lets the same feature be present in one day's file and 
 another. That takes 97 to **95**, and needs neither hand exclusion: with the object indices
 classified correctly, both of those features survive on their own merits. The mechanism for
 excluding a feature by name is there, in `[drop_missing] exclude`, and ships empty.
+
+## Reading the reference configuration
+
+`examples/published.ini` carries the settings and a header, on the reasoning that the article
+is where the method is argued. Three of its values need a sentence that does not fit in the
+file.
+
+**The dose vector is a 1.75-fold serial dilution from 1000 mg/L** — `1000 / 1.75^k` for
+k = 8…0, written to full precision. The article's SI prints the same series truncated
+(1000, 571.42, 326.530, 186.588 … 11.36), which is how the factor was pinned to exactly 1.75
+rather than the 1.7502 a back-calculation from those truncated endpoints suggests. The run
+does not fit against these values — `[fit] x_scale` is `rank` — but they are what makes the
+direction of the exposure axis checkable, on a dataset whose labels descend as its doses
+climb.
+
+**The highest exposure is withheld from curve fitting.** `exclude_from_fit = 2` keeps
+concentration–response detection inside the sub-cytotoxic range the article is about. The
+distance is still computed for that level and still appears in `emd.tsv`; only the fit skips
+it, which is what leaves the eight fitted contrasts 11v10, 11v9 … 11v3.
+
+**`[drop_missing] exclude` ships empty, and that is a result rather than an omission.** The
+published run struck out two features by hand at this step —
+`rp_norm_AreaShape_Compactness_RelateLysoCell` and
+`rp_norm_Texture_AngularSecondMoment_GrayLys_3_00_256_RelateLysoCell`. With the object indices
+declared metadata the rules reach the published feature count without them and both survive
+on their own merits; naming them would take the final list from 95 to 93.
 
 ## An aside that is really a check
 

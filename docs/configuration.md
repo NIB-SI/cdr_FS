@@ -2,18 +2,18 @@
 
 Every key a `.ini` file can set, what it defaults to and what it means. This is the page to
 keep open while writing a configuration; it assumes you have already copied
-[`examples/published.ini`](../examples/published.ini) and want to know what a particular key
-does. Two of its sections run longer than a reference entry because the obvious reading of
-them is wrong: the one on `metadata_patterns`, and the one on how the exposure levels are
-spaced along the fitted axis.
+[`examples/template.ini`](../examples/template.ini) — the annotated starting point, which
+carries every section and every switch — and want to know what a particular key does. Two of
+its sections run longer than a reference entry because the obvious reading of them is wrong:
+the one on `metadata_patterns`, and the one on how the exposure levels are spaced along the
+fitted axis.
 
 `.ini` carries no type information, so every value is parsed and cross-checked before any
 data is read. A wrong configuration fails in the first second with a message naming the
 section, the key and — where there is one to name — the fix, rather than producing
-plausible-looking wrong numbers. All
-ten sections must be present even when every key in them is left at its default, so that
-a mistyped section name is an error instead of a silent fall-back; unknown keys are
-rejected for the same reason.
+plausible-looking wrong numbers. All ten sections must be present even when every key in them
+is left at its default, so that a mistyped section name is an error instead of a silent
+fall-back; unknown keys are rejected for the same reason.
 
 | Section | Key | Default | Meaning |
 |---|---|---|---|
@@ -89,6 +89,11 @@ minority groups are visible:
 
 It also warns about any pattern that matched nothing, since that is how a metadata column
 quietly turns into a feature.
+
+Mechanically: one regex per line, so a pattern may itself contain commas, and patterns are
+**searched, not fullmatched**. `counts_` alone therefore matches every column with that text
+anywhere in it; anchor with `^...$` to name a single column, as the reference configuration
+does for all but one of its patterns.
 
 The mistake runs the other way too, and it is harder to see. A column can be named like a
 measurement and still be a label:

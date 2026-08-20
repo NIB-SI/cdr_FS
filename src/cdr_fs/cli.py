@@ -1,9 +1,15 @@
 """Command line entry point.
 
 One subcommand per stage, plus `check`, which validates a configuration and reports the
-metadata/feature split without running anything. Every subcommand takes `-c/--config`,
-which is what removes both the `/PATH/TO/...` editing ritual and the
-run-from-the-script's-own-directory constraint of the original scripts.
+metadata/feature split without running anything, and `run`, which executes the chain.
+Every subcommand takes `-c/--config`, which is what removes both the `/PATH/TO/...`
+editing ritual and the run-from-the-script's-own-directory constraint of the original
+scripts.
+
+Each stage is two functions: a handler that parses `argparse` and loads the
+configuration, and a `_stage_*` that takes an already-loaded `Config` and explicit
+options. `run` loads the configuration once and calls the second of each pair, so a
+misconfigured run fails before the first stage rather than between two of them.
 
 Stage modules are imported inside their handlers, so `--help` and `check` work on an
 install without pandas, scipy or matplotlib present.
@@ -25,6 +31,14 @@ _EXTENSIONS = {"tab": ".tsv", "comma": ".csv", "semicolon": ".csv"}
 #: `cdr-fs plot --only` names, and what each figure needs to exist.
 FIGURES = ("fits", "emd", "baseline", "dendrogram")
 
+#: The stages `cdr-fs run` executes, in order. `trim` is deliberately not one of them:
+#: every stage trims from `[input] table` itself, so a trimmed copy is an inspection
+#: artefact rather than an input - 3.9 GB of one on the reference dataset.
+CHAIN = ("emd", "fit", "select", "correlation", "drop_missing", "plot")
+
+#: Width of the rules `run` prints between stages.
+_RULE_WIDTH = 78
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
@@ -45,12 +59,16 @@ def main(argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cdr-fs",
+        # Raw, so the two epilog lines stay two lines: they point at different files for
+        # different jobs, and reflowed into one paragraph that distinction is lost.
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
-            "Feature selection for high-content screening by fitting "
+            "Feature selection for high-content screening by fitting\n"
             "concentration/dose-response models to earth mover's distance scores."
         ),
         epilog=(
-            "Start from examples/published.ini, which reproduces the run described in "
+            "Start from examples/template.ini for a new dataset.\n"
+            "examples/published.ini is the published run: "
             "https://doi.org/10.1021/acs.est.5c18316"
         ),
     )
@@ -67,6 +85,26 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     check.set_defaults(handler=_check)
+
+    run = _add(
+        subparsers,
+        "run",
+        "run the whole chain: " + ", ".join(CHAIN),
+        description=(
+            "Run the whole chain in order: "
+            + " -> ".join(CHAIN)
+            + ". The configuration is read once, at the start, and each stage prints its "
+            "own report. `correlation` is skipped when [correlation] enabled is false, "
+            "which is a declared outcome rather than a failure; `drop_missing` always "
+            "runs, because it writes the final table. Two things are separate commands "
+            "on purpose and no run calls them: `trim`, which only writes a trimmed copy "
+            "of the input for inspection, and `plot` over every feature - the figures "
+            "drawn here cover the retained features only. Exit codes are 0 when every "
+            "planned stage finished, 2 for a configuration error, and 3 when a stage "
+            "refused and the chain stopped there."
+        ),
+    )
+    run.set_defaults(handler=_run)
 
     trim = _add(subparsers, "trim", "remove extreme feature values (optional QC step)")
     trim.add_argument(
@@ -147,8 +185,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add(subparsers, name: str, help_text: str) -> argparse.ArgumentParser:
-    parser = subparsers.add_parser(name, help=help_text, description=help_text)
+def _add(
+    subparsers, name: str, help_text: str, description: str | None = None
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        name, help=help_text, description=description or help_text
+    )
     parser.add_argument(
         "-c",
         "--config",
@@ -183,6 +225,21 @@ def _abbreviate(values, limit: int = 12) -> str:
     return f"{head}, ... {values[-1]}  ({len(values)} in total)"
 
 
+def _exposure_axis(config: Config) -> str:
+    """Which end of `[design] levels` is the low exposure, spelled out.
+
+    Not left to "(low to high)": the order of that list is the response axis, and a list
+    written the wrong way round runs to completion, negates every slope and retains
+    nothing. This line is where a reader can catch that, which is why both `check` and
+    `run` print it.
+    """
+    design = config.design
+    ends = f"{design.levels[0]} is the LOWEST exposure, {design.levels[-1]} the highest"
+    if design.dose is not None:
+        ends += f"   ({design.dose[0]:g} -> {design.dose[-1]:g})"
+    return ends
+
+
 def _describe(config: Config) -> list[str]:
     design, emd, fit = config.design, config.emd, config.fit
     lines = [
@@ -198,13 +255,7 @@ def _describe(config: Config) -> list[str]:
         _field("control", design.control),
         _field("levels", _abbreviate(design.levels)),
     ]
-    # Spelled out rather than left to "(low to high)": the order of this list is the
-    # response axis, and a list written the wrong way round runs to completion, negates
-    # every slope and retains nothing. This line is where a reader can catch that.
-    ends = f"{design.levels[0]} is the LOWEST exposure, {design.levels[-1]} the highest"
-    if design.dose is not None:
-        ends += f"   ({design.dose[0]:g} -> {design.dose[-1]:g})"
-    lines.append(_field("exposure axis", ends))
+    lines.append(_field("exposure axis", _exposure_axis(config)))
     if design.dose is not None:
         lines.append(_field("dose", _abbreviate(f"{value:g}" for value in design.dose)))
     else:
@@ -327,9 +378,12 @@ def _describe_schema(config: Config, columns: list[str]) -> list[str]:
 
 
 def _check(args: argparse.Namespace) -> int:
+    return _stage_check(load_config(args.config), scan=args.scan)
+
+
+def _stage_check(config: Config, *, scan: bool = False) -> int:
     from cdr_fs.schema import read_header
 
-    config = load_config(args.config)
     print(f"cdr_FS {__version__} - configuration check")
     print(_field("config", str(config.path)))
     for line in _describe(config):
@@ -341,7 +395,7 @@ def _check(args: argparse.Namespace) -> int:
     for line in _describe_schema(config, columns):
         print(line)
 
-    if args.scan:
+    if scan:
         warnings += _scan(config)
     else:
         print()
@@ -476,7 +530,10 @@ def _read_stage(config: Config, name: str, produced_by: str):
 
 
 def _trim(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
+    return _stage_trim(load_config(args.config), dry_run=args.dry_run)
+
+
+def _stage_trim(config: Config, *, dry_run: bool = False) -> int:
     if not config.trim.enabled:
         print(
             "error: [trim] enabled is false, so there is nothing to do",
@@ -485,7 +542,7 @@ def _trim(args: argparse.Namespace) -> int:
         return 3
 
     frame, _ = _prepare(config)
-    if args.dry_run:
+    if dry_run:
         print("dry run - nothing written")
         return 0
     _write(config, frame, "trimmed")
@@ -493,9 +550,12 @@ def _trim(args: argparse.Namespace) -> int:
 
 
 def _emd(args: argparse.Namespace) -> int:
+    return _stage_emd(load_config(args.config))
+
+
+def _stage_emd(config: Config) -> int:
     from cdr_fs.emd import compute_baseline, compute_contrasts
 
-    config = load_config(args.config)
     frame, resolved = _prepare(config)
 
     contrasts, report = compute_contrasts(config, frame, resolved.features)
@@ -510,9 +570,12 @@ def _emd(args: argparse.Namespace) -> int:
 
 
 def _fit(args: argparse.Namespace) -> int:
+    return _stage_fit(load_config(args.config))
+
+
+def _stage_fit(config: Config) -> int:
     from cdr_fs.fit import fit_series
 
-    config = load_config(args.config)
     distances = _read_stage(config, "emd", "emd")
     table, report = fit_series(config, distances)
     print(report.summary())
@@ -530,9 +593,12 @@ def _fit(args: argparse.Namespace) -> int:
 
 
 def _select(args: argparse.Namespace) -> int:
+    return _stage_select(load_config(args.config))
+
+
+def _stage_select(config: Config) -> int:
     from cdr_fs.select import select_features
 
-    config = load_config(args.config)
     fits = _read_stage(config, "fit", "fit")
     retained, evidence, report = select_features(config, fits)
     print(report.summary())
@@ -543,10 +609,16 @@ def _select(args: argparse.Namespace) -> int:
 
 
 def _correlation(args: argparse.Namespace) -> int:
+    return _stage_correlation(load_config(args.config))
+
+
+def _stage_correlation(config: Config) -> int:
     from cdr_fs.correlation import collapse_correlated
     from cdr_fs.drop_missing import read_feature_list
 
-    config = load_config(args.config)
+    # `run` reads this switch itself and does not call the stage when it is off, so this
+    # refusal is only ever reached by `cdr-fs correlation`, where the user asked for the
+    # stage by name and an exit code is the honest answer.
     if not config.correlation.enabled:
         print(
             "error: [correlation] enabled is false, so there is nothing to do",
@@ -577,11 +649,14 @@ def _correlation(args: argparse.Namespace) -> int:
 
 
 def _drop_missing(args: argparse.Namespace) -> int:
+    return _stage_drop_missing(load_config(args.config), features=args.features)
+
+
+def _stage_drop_missing(config: Config, *, features: str | None = None) -> int:
     from cdr_fs.drop_missing import read_feature_list, restrict_table
 
-    config = load_config(args.config)
-    if args.features:
-        source = Path(args.features)
+    if features:
+        source = Path(features)
         if not source.is_file():
             raise ConfigError(f"--features file not found: {source}")
     else:
@@ -595,8 +670,8 @@ def _drop_missing(args: argparse.Namespace) -> int:
             )
     print(f"applying {source.name}")
 
-    features = read_feature_list(source)
-    if not features:
+    names = read_feature_list(source)
+    if not names:
         # Otherwise the output is a metadata-only table, which looks like a result.
         print(
             f"error: {source.name} is empty, so there are no features to write",
@@ -607,7 +682,7 @@ def _drop_missing(args: argparse.Namespace) -> int:
     final, quality, report = restrict_table(
         frame,
         resolved.metadata,
-        features,
+        names,
         drop_missing=config.drop_missing.enabled,
         max_missing=config.drop_missing.max_missing,
         exclude=config.drop_missing.exclude,
@@ -624,16 +699,27 @@ def _drop_missing(args: argparse.Namespace) -> int:
 
 
 def _plot(args: argparse.Namespace) -> int:
+    return _stage_plot(
+        load_config(args.config), only=args.only, grid=args.grid, features=args.features
+    )
+
+
+def _stage_plot(
+    config: Config,
+    *,
+    only: str | None = None,
+    grid: int = 3,
+    features: str | None = None,
+) -> int:
     import pandas as pd
 
     from cdr_fs.drop_missing import read_feature_list
     from cdr_fs.plots import plot_dendrogram, plot_distribution, plot_fit_panels
     from cdr_fs.schema import read_stage_table
 
-    config = load_config(args.config)
     wanted = FIGURES
-    if args.only:
-        wanted = tuple(part.strip() for part in args.only.split(",") if part.strip())
+    if only:
+        wanted = tuple(part.strip() for part in only.split(",") if part.strip())
         unknown = [name for name in wanted if name not in FIGURES]
         if unknown:
             raise ConfigError(
@@ -648,12 +734,12 @@ def _plot(args: argparse.Namespace) -> int:
         target = results / f"{name}{extension}"
         return target if target.exists() else None
 
-    features = None
-    if args.features:
-        source = Path(args.features)
+    selection = None
+    if features:
+        source = Path(features)
         if not source.is_file():
             raise ConfigError(f"--features file not found: {source}")
-        features = read_feature_list(source)
+        selection = read_feature_list(source)
 
     drawn: list[Path] = []
     skipped: list[str] = []
@@ -677,8 +763,8 @@ def _plot(args: argparse.Namespace) -> int:
                 read(distances),
                 read(fits),
                 results,
-                grid=args.grid,
-                features=features,
+                grid=grid,
+                features=selection,
             ))
         else:
             skipped.append("fits - needs emd and fit (run `cdr-fs fit`)")
@@ -722,6 +808,115 @@ def _plot(args: argparse.Namespace) -> int:
         print("error: nothing to draw", file=sys.stderr)
         return 3
     return 0
+
+
+# ------------------------------------------------------------------------------- run
+
+
+def _rule(title: str) -> str:
+    """A titled rule, so each stage's own report reads as a block within the run's."""
+    opening = f"-- {title} "
+    return opening + "-" * max(3, _RULE_WIDTH - len(opening))
+
+
+def _run(args: argparse.Namespace) -> int:
+    return _run_chain(load_config(args.config))
+
+
+def _run_chain(config: Config) -> int:
+    """Run the chain, printing a header, each stage's own output, and a summary.
+
+    The configuration is loaded once, by the caller: a run is fifty seconds on the
+    quickstart fixture and a good deal longer on a real dataset, so a misconfiguration
+    has to fail before `emd` rather than between two stages.
+
+    Exit codes are the stages' own. A stage the configuration turns off is a declared
+    outcome and leaves the run at 0; an exit 3 is a stage refusing to write something
+    that would read as a result, and it stops the chain where it happened.
+    """
+    from cdr_fs.drop_missing import read_feature_list
+
+    correlated = config.correlation.enabled
+    # The rule `_stage_drop_missing` applies to pick its input list, so that `plot` and
+    # the closing line name the file this run will actually have written.
+    stem = "representatives" if correlated else "selected"
+    retained = _list_path(config, f"final_{stem}_retained")
+    stages = {
+        "emd": lambda: _stage_emd(config),
+        "fit": lambda: _stage_fit(config),
+        "select": lambda: _stage_select(config),
+        "correlation": lambda: _stage_correlation(config),
+        "drop_missing": lambda: _stage_drop_missing(config),
+        # With the list `drop_missing` has just written. `plot` given no list draws every
+        # feature in the distance table, which on a real run is hundreds of pages.
+        "plot": lambda: _stage_plot(config, features=str(retained)),
+    }
+
+    # The switch is read here rather than left to the stage: `correlation` refuses with
+    # exit 3 when it is off, and a configuration skip is not a failure. Reading it here
+    # is also what makes any exit 3 the chain does see a genuine stop.
+    planned = [stage for stage in CHAIN if correlated or stage != "correlation"]
+    status = dict.fromkeys(CHAIN, "not reached")
+    if not correlated:
+        status["correlation"] = "off"
+
+    for line in _run_header(config, planned):
+        print(line)
+
+    code = 0
+    for number, stage in enumerate(planned, 1):
+        print()
+        print(_rule(f"{number}/{len(planned)} {stage}"), flush=True)
+        code = stages[stage]()
+        if code:
+            status[stage] = "stopped"
+            break
+        status[stage] = "ok"
+
+    print()
+    print(_rule("summary"))
+    for stage in CHAIN:
+        print(_field(stage, status[stage]))
+    print(_field("trim", "not run"))  # last: it is not part of the chain
+    if status["drop_missing"] == "ok":
+        print(f"retained {len(read_feature_list(retained))} feature(s) -> {retained}")
+    return code
+
+
+def _run_header(config: Config, planned: list[str]) -> list[str]:
+    """What this run is about to do, and the two lines of `check` that can stop it.
+
+    Not the whole of `check`: the `[columns]` split and the exposure axis are the two
+    things nothing downstream can catch, and they are worth the second they cost. For
+    the rest, `cdr-fs check`.
+    """
+    from cdr_fs.schema import read_header
+
+    lines = [
+        f"cdr_FS {__version__} - run",
+        _field("config", str(config.path)),
+        _field("output", str(config.output.dir)),
+        _field("stages", ", ".join(planned)),
+    ]
+    absent = []
+    if "correlation" not in planned:
+        absent.append("correlation  ([correlation] enabled is false)")
+    # Two different facts wear the same label. With trimming on, `trim` is absent because
+    # its output is an inspection copy no stage reads; with it off, the stage would refuse,
+    # and pointing at a command that exits 3 would be worse than saying nothing.
+    absent.append(
+        "trim  (every stage trims from [input] table itself; "
+        f"`cdr-fs trim -c {config.path}` writes the trimmed copy for inspection)"
+        if config.trim.enabled
+        else "trim  ([trim] enabled is false, so nothing is trimmed anywhere)"
+    )
+    # One entry per line, the rest continuing under the same column.
+    lines.append(_field("not run", absent[0]))
+    lines += [_field("", note) for note in absent[1:]]
+    lines.append(_field("exposure axis", _exposure_axis(config)))
+    lines.append("")
+    lines += _describe_schema(config, read_header(config.input.table, config.input.sep))
+    return lines
 
 
 if __name__ == "__main__":  # pragma: no cover

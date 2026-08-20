@@ -1,11 +1,12 @@
 """The shipped example configurations must stay valid.
 
-Two files ship. `examples/published.ini` is what users copy for real work, and it is also
-the closest thing to a specification of the published run. `examples/quickstart.ini` is what
-the README tells a first-time reader to run, unedited, against the committed fixture - so it
-is the one shipped artefact whose paths must resolve as they stand.
+Three files ship. `examples/template.ini` is the annotated file a new dataset starts from, so
+it has to carry every section and every switch. `examples/published.ini` is the closest thing
+to a specification of the published run. `examples/quickstart.ini` is what the README tells a
+first-time reader to run, unedited, against the committed fixture - so it is the one shipped
+artefact whose paths must resolve as they stand.
 
-Nothing else in the suite would notice if a rename in `config.py` left either behind.
+Nothing else in the suite would notice if a rename in `config.py` left one of them behind.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from cases import COLUMNS_PUBLISHED, SUBSET, validate
 from cdr_fs.config import load_config
 
 ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE_INI = ROOT / "examples" / "template.ini"
 PUBLISHED_INI = ROOT / "examples" / "published.ini"
 QUICKSTART_INI = ROOT / "examples" / "quickstart.ini"
 
@@ -118,13 +120,47 @@ def test_the_quickstart_runs_exactly_as_shipped(monkeypatch):
     assert {"counts_RelateLysoCell", "counts_RelateMitoCell"} <= resolved.feature_set
 
 
+def test_the_template_carries_every_section_and_switch(tmp_path):
+    """It is the file a new dataset starts from, so its structure has to be the whole structure.
+
+    A switch it leaves out is a switch nobody discovers. The keys a user must decide are
+    written plain and the rest are written out commented at their defaults, which is what makes
+    the file complete and keeps `cdr-fs check`'s list of defaults in effect worth reading. Its
+    column names are generic on purpose, so this stops at `load_config`: there is no table the
+    template's schema is supposed to match.
+    """
+    import configparser
+
+    from cdr_fs.config import _ALLOWED
+
+    text = TEMPLATE_INI.read_text(encoding="utf-8")
+    text = re.sub(r"(?m)^table = .*$", f"table = {SUBSET.as_posix()}", text)
+    text = re.sub(r"(?m)^dir = .*$", f"dir = {(tmp_path / 'results').as_posix()}", text)
+    path = tmp_path / "template.ini"
+    path.write_text(text, encoding="utf-8")
+
+    config = load_config(path)
+    assert config.design.levels == ("L1", "L2", "L3", "L4", "L5", "L6")
+
+    parser = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";",))
+    parser.read_string(text)
+    assert set(parser.sections()) == set(_ALLOWED)
+    for section, (required, optional) in _ALLOWED.items():
+        present = set(parser.options(section))
+        assert required <= present, f"[{section}] omits required {sorted(required - present)}"
+        for key in sorted(optional - present):
+            assert re.search(rf"(?m)^;\s*{re.escape(key)} =", text), (
+                f"[{section}] {key} is neither set nor shown commented at its default"
+            )
+
+
 def test_no_shipped_configuration_carries_a_local_path():
     """A committed absolute path is the one mistake a DOI'd release cannot take back.
 
-    `published.ini` uses `/PATH/TO/...` placeholders; `quickstart.ini` uses repository-
-    relative paths. Neither may name a drive, a home directory, or an absolute location.
+    `template.ini` and `published.ini` use `/PATH/TO/...` placeholders; `quickstart.ini` uses
+    repository-relative paths. None may name a drive, a home directory, or an absolute location.
     """
-    for path in (PUBLISHED_INI, QUICKSTART_INI):
+    for path in (TEMPLATE_INI, PUBLISHED_INI, QUICKSTART_INI):
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             setting = line.split(";")[0].strip()
             if not setting.startswith(("table", "dir")):
