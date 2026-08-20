@@ -242,9 +242,9 @@ cdr-fs plot         -c config.ini          # draw the figures from whatever tabl
 | `emd` | `emd.tsv` — control against each level; `emd_baseline.tsv` — control against control, between replicates |
 | `fit` | `fit.tsv` |
 | `select` | `selected.txt`; `select_evidence.tsv` — per feature and stratum, which model won, by how much, and what the linear slope was |
-| `correlation` | `representatives.txt`; `correlation_clusters.tsv` — every feature with its cluster and its distance to the representative; `correlation_linkage.tsv` — the tree and its leaf order |
+| `correlation` | `representatives.txt`; `correlation_clusters.tsv` — every feature with its cluster and its distance to the representative; `correlation_linkage.tsv` — the tree and its leaf order. All three take an `all_` prefix when there was no selection to collapse |
 | `drop_missing` | `final_<list>.tsv` — the table restricted to that list; `final_<list>_features.tsv` — how much data each column holds and which rule removed it; `final_<list>_retained.txt` |
-| `plot` | `fit_<stratum>_part_<n>.png`; `emd.png` and `emd_baseline.png`; `dendrogram.png` |
+| `plot` | `fit_<stratum>_part_<n>.png`; `emd.png` and `emd_baseline.png`; `dendrogram.png`, or `all_dendrogram.png` beside its tree |
 
 ### What `run` runs, and what it leaves out
 
@@ -282,9 +282,17 @@ why `run` does not call it.
 
 `selected.txt` if you stop after `select`; `representatives.txt` if you collapse correlated
 features; `final_<list>_retained.txt` if you also apply the missing-data filter. Each is one
-feature name per line. `<list>` is whichever list narrowed the features last, so it is
-`all` only when neither `select` nor `correlation` narrowed anything: a run with the selection
-off but correlation on still ends in `final_representatives_retained.txt`.
+feature name per line, and `<list>` is whichever list narrowed the features last.
+
+A correlation of every feature is not a correlation of the selected ones, so with the selection
+off those outputs take an `all_` prefix — `all_representatives.txt`, and a run ending in
+`final_all_representatives_retained.txt`. Two chains can therefore share one `[output] dir`
+without either overwriting the other's answer:
+
+| | `[select]` on | `[select]` off |
+|---|---|---|
+| `[correlation]` on | `representatives.txt` → `final_representatives*` | `all_representatives.txt` → `final_all_representatives*` |
+| `[correlation]` off | `selected.txt` → `final_selected*` | — → `final_all*` |
 
 ### When a stage refuses
 

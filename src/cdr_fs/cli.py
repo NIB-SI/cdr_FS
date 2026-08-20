@@ -531,6 +531,17 @@ def _list_path(config: Config, name: str) -> Path:
     return Path(config.output.dir) / f"{name}.txt"
 
 
+def _collapsed_prefix(config: Config) -> str:
+    """What `correlation`'s outputs are called: nothing extra, or `all_`.
+
+    A correlation of every feature is not a correlation of the selected ones, and the two
+    must not overwrite each other's answers in a shared output directory. The method's own
+    chain keeps the unqualified names; a run with no selection qualifies its outputs with
+    the input they were built from.
+    """
+    return "" if config.select.enabled else "all_"
+
+
 def _features_stem(config: Config) -> str | None:
     """Which list the filtering stages apply, by name, or None for every feature.
 
@@ -539,7 +550,7 @@ def _features_stem(config: Config) -> str | None:
     feature set is what there is to filter.
     """
     if config.correlation.enabled:
-        return "representatives"
+        return f"{_collapsed_prefix(config)}representatives"
     if config.select.enabled:
         return "selected"
     return None
@@ -723,9 +734,10 @@ def _stage_correlation(config: Config) -> int:
 
     kept, clusters, tree, report = collapse_correlated(config, frame, features)
     print(report.summary())
-    _write(config, clusters, "correlation_clusters")
-    _write(config, tree, "correlation_linkage")
-    _write_list(config, kept, "representatives")
+    prefix = _collapsed_prefix(config)
+    _write(config, clusters, f"{prefix}correlation_clusters")
+    _write(config, tree, f"{prefix}correlation_linkage")
+    _write_list(config, kept, f"{prefix}representatives")
     return 0
 
 
@@ -868,13 +880,18 @@ def _stage_plot(
     if "dendrogram" in wanted:
         # Only when the stage is on: a tree left in the output directory by an earlier
         # run would otherwise be drawn as though it belonged to this one.
-        tree = available("correlation_linkage") if config.correlation.enabled else None
-        clusters = available("correlation_clusters")
+        prefix = _collapsed_prefix(config)
+        tree = (
+            available(f"{prefix}correlation_linkage")
+            if config.correlation.enabled
+            else None
+        )
+        clusters = available(f"{prefix}correlation_clusters")
         if tree:
             draw("dendrogram", lambda: [
                 plot_dendrogram(
                     pd.read_csv(tree, sep=config.input.sep),
-                    results / "dendrogram.png",
+                    results / f"{prefix}dendrogram.png",
                     cut=1.0 - config.correlation.threshold,
                     clusters=read(clusters) if clusters else None,
                 )
@@ -885,7 +902,8 @@ def _stage_plot(
             )
         else:
             skipped.append(
-                "dendrogram - needs correlation_linkage (run `cdr-fs correlation`)"
+                f"dendrogram - needs {prefix}correlation_linkage "
+                f"(run `cdr-fs correlation`)"
             )
 
     for path in drawn:
