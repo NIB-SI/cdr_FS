@@ -40,9 +40,9 @@ None of it is required to exist. What changes is what you can ask.
 | **two replicates** | `pool_over = <column>` | Nothing structural — but the floor is then one number per feature and stratum rather than a spread |
 | **five exposure levels** | `[fit] models = BC4,LL4,WB1.4,Lin,Con` | BC5. Five points cannot identify five parameters |
 | **three or four levels** | `[fit] models = Lin,Con` | Every sigmoid. You are asking whether a line beats a flat line — still a question, but not concentration–response modelling |
-| **two levels** | — | This design cannot be run: `[select]` requires both `Lin` and `Con`, and `Lin` needs three points |
+| **two levels** | — | No concentration–response question can be asked: `[select]` requires both `Lin` and `Con`, and `Lin` needs three points. With `[select] enabled = false` the design still runs, as a redundancy and sparsity filter |
 | **no need to trim** | `[trim] enabled = false` | Nothing, except that `[correlation] aggregate_by` no longer has `[trim] scope` to default to, so set it explicitly |
-| **no wish to collapse correlated features** | `[correlation] enabled = false` | The redundancy collapse. `cdr-fs drop_missing` then applies `selected.txt` instead of `representatives.txt`, and says which it used |
+| **no wish to collapse correlated features** | `[correlation] enabled = false` | The redundancy collapse. `cdr-fs drop_missing` then applies `selected.txt` instead of `representatives.txt` — or every feature, if the selection is off too — and says which it used |
 | **no concentration–response question at all** — you want the redundancy and sparsity filtering over the whole feature set | `[select] enabled = false` | The method. `emd`, `fit` and `select` are skipped, every feature carries forward, and the final table is named `final_all` because no list narrowed it. `[design]` is still required and still checked against the data; what goes is the constraint that the models be identifiable, so a three-level design runs |
 
 Two of these deserve spelling out.

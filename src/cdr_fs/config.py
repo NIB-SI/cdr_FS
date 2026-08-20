@@ -188,6 +188,26 @@ class DropMissingSpec:
     exclude: tuple[str, ...]
 
 
+def _identifiability_problem(design: DesignSpec, fit: FitSpec) -> str | None:
+    """Why `[fit] models` cannot be fitted on this design, or None when they can.
+
+    Asked in two places for one reason. `load_config` asks it only when the selection is
+    enabled, because refusing a design for a model nobody runs is demanding a fix to an
+    irrelevant key; `cdr-fs fit` stays runnable either way, so it asks for itself. Without
+    that second ask, scipy answers an over-parameterised fit with a `TypeError` - a
+    traceback and an exit code of 1, where the user had a message and a 2.
+    """
+    fitted = len(design.fitted_levels)
+    if fitted > fit.max_params:
+        return None
+    worst = max(fit.models, key=lambda model: MODEL_PARAMS[model])
+    return (
+        f"includes {worst}, which has {MODEL_PARAMS[worst]} free parameters, but only "
+        f"{fitted} level(s) are fitted after [design] exclude_from_fit; the fit needs "
+        f"more points than parameters"
+    )
+
+
 @dataclass(frozen=True)
 class OutputSpec:
     dir: Path
@@ -208,6 +228,11 @@ class Config:
     output: OutputSpec
     #: "section.key" for every value that came from a default rather than the file.
     defaulted: tuple[str, ...]
+
+    @property
+    def fit_problem(self) -> str | None:
+        """`[fit] models` against this design - for `fit`, which runs without the gate."""
+        return _identifiability_problem(self.design, self.fit)
 
     # ------------------------------------------------------------------- roles
 
@@ -329,7 +354,7 @@ class Config:
                     f"column {self.schema.condition} holds values that [design] does not "
                     f"declare, which will be ignored: {', '.join(undeclared)}"
                 )
-        if strata is not None and self.select.strata is not None:
+        if strata is not None and self.select.enabled and self.select.strata is not None:
             missing = sorted(set(self.select.strata) - strata)
             if missing:
                 raise ConfigError(
@@ -829,19 +854,12 @@ def _read_fit(reader: _Reader, design: DesignSpec, *, selecting: bool) -> FitSpe
             "fit", "rank_by", RANK_BY, default="aic_plus_bic"
         )
     )
-    # Only when something will actually be fitted. With [select] enabled false the models
-    # are never called, and refusing a four-level design for a model nobody runs would be
-    # demanding a fix to an irrelevant key.
-    fitted = len(design.fitted_levels)
-    if selecting and fitted <= spec.max_params:
-        worst = max(spec.models, key=lambda model: MODEL_PARAMS[model])
-        raise reader.fail(
-            "fit",
-            "models",
-            f"includes {worst}, which has {MODEL_PARAMS[worst]} free parameters, but only "
-            f"{fitted} level(s) are fitted after [design] exclude_from_fit; the fit needs "
-            f"more points than parameters",
-        )
+    # Only when something will actually be fitted: refusing a four-level design for a
+    # model nobody runs is demanding a fix to an irrelevant key. `cdr-fs fit` asks the
+    # same question itself, since it stays runnable when the selection is off.
+    problem = _identifiability_problem(design, spec)
+    if selecting and problem:
+        raise reader.fail("fit", "models", problem)
     return spec
 
 

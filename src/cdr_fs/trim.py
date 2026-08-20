@@ -108,8 +108,8 @@ class TrimReport:
                 f"{_listing(self.features_with_empty_cells)}"
             )
             lines.append(
-                "  those cells cannot contribute a distance, so the features will be "
-                "fitted on an incomplete series or not at all"
+                "  those cells cannot contribute a distance, so any curve fitted to those "
+                "features is short of points, or is not fitted at all"
             )
         if self.rows_with_missing_scope:
             lines.append(

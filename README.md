@@ -249,7 +249,7 @@ cdr-fs plot         -c config.ini          # draw the figures from whatever tabl
 ### What `run` runs, and what it leaves out
 
 `emd`, `fit`, `select`, `correlation`, `drop_missing`, `plot`, reading the configuration once
-so that a bad one fails before the first stage rather than between two of them. Three
+so that a bad one fails before the first stage rather than between two of them. Four
 departures from "all of them", each stated in the run's own header:
 
 - **`emd`, `fit` and `select` run only when `[select] enabled` is true.** Turned off, no
@@ -258,8 +258,8 @@ departures from "all of them", each stated in the run's own header:
   because `select` needs `fit` and `fit` needs `emd`, and with nothing reading their tables the
   two expensive stages would be work for its own sake.
 - **`correlation` runs only when `[correlation] enabled` is true.** Turned off it is reported
-  as `off` rather than as a failure, and `drop_missing` applies `selected.txt` instead of
-  `representatives.txt`.
+  as `off` rather than as a failure, and `drop_missing` falls back to `selected.txt` — or,
+  with the selection off as well, to every feature.
 - **`drop_missing` always runs**, whatever its switch says. The switch decides whether the
   missing-data filter drops anything; the stage writes the final table either way, so a run
   always ends in one.
@@ -267,7 +267,9 @@ departures from "all of them", each stated in the run's own header:
 
 `plot` is given only the figures this run's own tables can support, so a report that says
 nothing was fitted cannot contain a previous run's distances. With nothing left to draw, `plot`
-is dropped from the plan and said to be.
+is dropped from the plan and said to be — and a figure that refuses is reported as `no figures`
+rather than failing the run, because the run's product is the table and the figures are
+diagnostics.
 
 ### `trim` is optional
 
@@ -280,8 +282,9 @@ why `run` does not call it.
 
 `selected.txt` if you stop after `select`; `representatives.txt` if you collapse correlated
 features; `final_<list>_retained.txt` if you also apply the missing-data filter. Each is one
-feature name per line. `<list>` is whichever list narrowed the features last — `all` when
-neither `select` nor `correlation` did, so a filter-only run ends in `final_all_retained.txt`.
+feature name per line. `<list>` is whichever list narrowed the features last, so it is
+`all` only when neither `select` nor `correlation` narrowed anything: a run with the selection
+off but correlation on still ends in `final_representatives_retained.txt`.
 
 ### When a stage refuses
 

@@ -99,14 +99,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "Run the whole chain in order: "
             + " -> ".join(CHAIN)
             + ". The configuration is read once, at the start, and each stage prints its "
-            "own report. `correlation` is skipped when [correlation] enabled is false, "
-            "which is a declared outcome rather than a failure; `drop_missing` always "
-            "runs, because it writes the final table. Two things are separate commands "
-            "on purpose and no run calls them: `trim`, which only writes a trimmed copy "
-            "of the input for inspection, and `plot` over every feature - the figures "
-            "drawn here cover the retained features only. Exit codes are 0 when every "
-            "planned stage finished, 2 for a configuration error, and 3 when a stage "
-            "refused and the chain stopped there."
+            "own report. A stage a switch turns off is reported as skipped rather than as "
+            "a failure: [select] enabled false skips "
+            + ", ".join(SELECTION)
+            + " together, carrying every feature into the filtering stages, and "
+            "[correlation] enabled false skips that one. `drop_missing` always runs, "
+            "because it writes the final table. Two things are separate commands on "
+            "purpose and no run calls them: `trim`, which only writes a trimmed copy of "
+            "the input for inspection, and `plot` over every feature - the figures drawn "
+            "here cover the retained features only, and a figure that will not draw is "
+            "reported without failing the run. Exit codes are 0 when every planned stage "
+            "finished, 2 for a configuration error, and 3 when a stage refused and the "
+            "chain stopped there."
         ),
     )
     run.set_defaults(handler=_run)
@@ -154,8 +158,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--features",
         metavar="FILE",
         help=(
-            "feature list to apply, one name per line; defaults to the representatives list "
-            "when [correlation] is enabled and the selected list otherwise"
+            "feature list to apply, one name per line; the default is the representatives "
+            "list when [correlation] is enabled, the selected list when only [select] is, "
+            "and every feature when neither is"
         ),
     )
     drop_missing.set_defaults(handler=_drop_missing)
@@ -628,6 +633,14 @@ def _fit(args: argparse.Namespace) -> int:
 def _stage_fit(config: Config) -> int:
     from cdr_fs.fit import fit_series
 
+    # `load_config` raises this only when [select] enabled is true. This stage runs either
+    # way, so it asks for itself: an over-parameterised `curve_fit` raises `TypeError`,
+    # which reaches the user as a traceback and an exit code of 1.
+    problem = config.fit_problem
+    if problem:
+        print(f"error: {config.path}: [fit] models - {problem}", file=sys.stderr)
+        return 2
+
     distances = _read_stage(config, "emd", "emd")
     table, report = fit_series(config, distances)
     print(report.summary())
@@ -955,9 +968,17 @@ def _run_chain(config: Config) -> int:
     for number, stage in enumerate(planned, 1):
         print()
         print(_rule(f"{number}/{len(planned)} {stage}"), flush=True)
-        code = stages[stage]()
-        if code:
+        result = stages[stage]()
+        if result and stage == "plot":
+            # The run's product is the final table; the figures are diagnostics, and
+            # `plot` has already named on stderr the ones it could not draw. A picture
+            # that will not draw must not fail a run that wrote its table - reachable
+            # with one feature, where the dendrogram has nothing to cut.
+            status[stage] = "no figures"
+            continue
+        if result:
             status[stage] = "stopped"
+            code = result
             break
         status[stage] = "ok"
 
