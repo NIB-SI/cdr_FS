@@ -5,7 +5,7 @@ material lives here, in six pages.
 
 | Page | What is on it |
 |---|---|
-| [Quickstart](quickstart.md) | An annotated first run: what `check` tells you before you start, what each stage reports, where its numbers come from, and three outputs that look wrong and are not |
+| [Quickstart](quickstart.md) | An annotated first run: what `check` tells you before you start, what the stage reports mean, where their numbers come from, and three outputs that look wrong and are not |
 | [Troubleshooting](troubleshooting.md) | Exit codes and which stages refuse, what each label in a run's summary means, and where to look when a run retains nothing or a figure does not draw |
 | [Configuration](configuration.md) | Every key, its default and its meaning, plus the two things that are easy to get wrong: `metadata_patterns`, and how the exposure levels are spaced along the fitted axis |
 | [Describing your experiment](experiment-design.md) | The twelve keys that state facts about the experiment, what to write when a piece of the design is missing, the smallest configuration that runs, and what the configuration cannot say |

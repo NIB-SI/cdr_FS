@@ -52,8 +52,9 @@ rule also drops two of the nine the correct axis keeps, so an empty result still
 
 `[design] dose` guards half of it: the doses must rise along `levels`, so the two lists cannot
 silently disagree. **Supply them even when you fit on `rank`**, for that reason alone. What it
-cannot catch is both lists being wrong the same way, so the backstop is the `exposure axis`
-line `cdr-fs check` prints. Read it against your own plate map.
+cannot catch is a reversed `levels` with `dose` left alone: the pairing is broken but the doses
+still rise, so the check passes. Only you know which label was your top dose, so the backstop is
+the `exposure axis` line `cdr-fs check` prints. Read it against your own plate map.
 
 **`[correlation] aggregate_by` must name a unit that varies along the exposure axis.**
 Correlations are computed between unit medians, so a unit spanning the whole dilution series
@@ -125,6 +126,8 @@ already does.
 
 ## See also
 
+- [Quickstart](quickstart.md): an annotated first run, and where its numbers come from
+- [Troubleshooting](troubleshooting.md): exit codes, the summary labels, and where to look when a run retains nothing
 - [Configuration](configuration.md): every key, its default and its meaning
 - [Method notes](method-notes.md): trimming, pooling, collapsing, dropping, and the figures
 - [Reproducing the published run](reproducing.md): the four checks against the published outputs

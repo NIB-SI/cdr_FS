@@ -20,9 +20,10 @@ rather than rows, and both surface later:
 
 `[trim] scope` should name one physical unit of the assay, so that the percentiles are taken
 across objects that were handled together; in the published run that is one well of one
-replicate on one day. The unit has to hold enough objects for a percentile to mean something:
-trimming the committed fixture the published way to `[p2.5, p97.5]` removes 55% of its values,
-which is why `examples/quickstart.ini` turns trimming off. `[correlation] aggregate_by` defaults
+replicate on one day. The unit has to hold enough objects for a percentile to mean something.
+The committed fixture holds one to eight cells per well, so trimming it the published way to
+`[p2.5, p97.5]` removes 55% of its values, which is why `examples/quickstart.ini` turns
+trimming off. `[correlation] aggregate_by` defaults
 to `scope`, on the reasoning that the unit worth trimming within is the unit worth correlating
 across; `scope` is read whether or not trimming is on, so leaving it unset is what makes
 `aggregate_by` required once `[correlation] enabled` is true.
@@ -114,6 +115,8 @@ matching the AIC printed beside it, which happens to about one fit in sixteen.
 
 ## See also
 
+- [Quickstart](quickstart.md): an annotated first run, and where its numbers come from
+- [Troubleshooting](troubleshooting.md): exit codes, the summary labels, and where to look when a run retains nothing
 - [Configuration](configuration.md): every key, its default and its meaning
 - [Describing your experiment](experiment-design.md): the twelve keys that state facts about the experiment
 - [Reproducing the published run](reproducing.md): the four checks against the published outputs

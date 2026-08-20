@@ -78,6 +78,8 @@ The asymmetry is visible in the published output itself, not merely in a reading
 
 ## See also
 
+- [Quickstart](quickstart.md): an annotated first run, and where its numbers come from
+- [Troubleshooting](troubleshooting.md): exit codes, the summary labels, and where to look when a run retains nothing
 - [Configuration](configuration.md): every key, its default and its meaning
 - [Describing your experiment](experiment-design.md): the twelve keys that state facts about the experiment
 - [Method notes](method-notes.md): trimming, pooling, collapsing, dropping, and the figures

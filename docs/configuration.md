@@ -5,8 +5,9 @@ Every key a `.ini` file can set, what it defaults to and what it means. Copy
 every section and every switch, and use this page to look up what a particular key does.
 
 `.ini` carries no type information, so every value is parsed and cross-checked before any data
-is read: a wrong configuration fails in the first second, with a message naming the section,
-the key and the fix. All ten sections must be present even when every key in them is left at
+is read. A wrong configuration fails in the first second, with a message naming the section,
+the key and, where there is one to name, the fix, rather than producing plausible-looking wrong
+numbers. All ten sections must be present even when every key in them is left at
 its default, so that a mistyped section name is an error rather than a silent fall-back, and
 unknown keys are rejected for the same reason.
 
@@ -46,9 +47,9 @@ unknown keys are rejected for the same reason.
 | | `exclude` | *(empty)* | exact feature names to leave out of the final table, whatever else says |
 | `output` | `dir` | *required* | where results are written |
 
-Two things this configuration makes explicit that the original scripts left implicit. **The
+Two things this configuration makes explicit that the original scripts left implicit. First, **the
 metadata list** lived as a literal in five scripts, in two versions; now one drives every
-stage. **The two halves of the retention rule** use *different* quantifiers: a positive slope
+stage. Second, **the two halves of the retention rule** use *different* quantifiers: a positive slope
 on **any** stratum, the constant model beaten on **all** of them, and separate keys let you
 choose `all`/`all` for the stricter rule.
 
@@ -85,7 +86,7 @@ made where it belongs. Only a pattern you write keeps a label out of the analysi
 ## Spacing the exposure axis
 
 `[fit] x_scale` decides where along the x-axis the exposure levels sit. `rank` puts them at
-0, 1, 2, ... - evenly spread, which is what the published run did; `dose` puts them at the
+0, 1, 2, ... evenly spread, which is what the published run did; `dose` puts them at the
 values in `[design] dose`. The catch is that the four sigmoid models evaluate `log(x)`
 themselves, so the axis they see is not the axis you supplied:
 
@@ -118,6 +119,8 @@ themselves, and it is NaN for any dose below 1.
 
 ## See also
 
+- [Quickstart](quickstart.md): an annotated first run, and where its numbers come from
+- [Troubleshooting](troubleshooting.md): exit codes, the summary labels, and where to look when a run retains nothing
 - [Describing your experiment](experiment-design.md): which of these keys state facts about the experiment
 - [Method notes](method-notes.md): trimming, pooling, collapsing, dropping, and the figures
 - [Reproducing the published run](reproducing.md): the four checks against the published outputs

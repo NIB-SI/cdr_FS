@@ -94,23 +94,15 @@ cdr-fs plot         -c examples/quickstart.ini --features results/final_represen
 
 ### The two lines to read first
 
-`cdr-fs check` prints how your columns and your exposure axis resolved. Nothing downstream
-can catch either of these, so read them before running anything:
+Two lines of `cdr-fs check` carry mistakes nothing downstream can catch. Read them before
+running anything, and against your own plate map:
 
 ```
-[columns]  30 = 10 metadata + 20 feature(s)
 exposure axis     10 is the LOWEST exposure, 2 the highest   (11.3683 -> 1000)
+[columns]  30 = 10 metadata + 20 feature(s)
 ```
 
-If that feature count is not the one you expect, fix `[schema] metadata_patterns` first. The
-patterns name the *metadata*, and everything they fail to match becomes a feature, so a
-pattern matching too much quietly removes real measurements.
-→ [Configuration](docs/configuration.md#one-warning-worth-reading-before-you-write-metadata_patterns)
-
-The second line states which end of `[design] levels` is the low dose. Read it against your
-own plate map; a list written the wrong way round runs to completion and gives a short,
-plausible, wrong answer.
-→ [Describing your experiment](docs/experiment-design.md)
+→ [Quickstart](docs/quickstart.md) says what each one means and what goes wrong.
 
 ### What came out
 
@@ -128,7 +120,7 @@ plausible, wrong answer.
 and fits all nine exposure levels rather than withholding the top one. For real work, copy
 [`examples/template.ini`](examples/template.ini) if your dataset is not the published one, and
 [`examples/published.ini`](examples/published.ini) if it is.
-→ [Quickstart](docs/quickstart.md) walks the whole run stage by stage.
+→ [Quickstart](docs/quickstart.md) annotates the run and the reports it prints.
 
 ## The pipeline
 
@@ -176,12 +168,12 @@ departures from "all of them", each stated in the run's own header:
   always ends in one.
 - **`trim` is never part of a run.** Every stage that needs cell-level data reads
   `[input] table` and applies the configured trim itself, so a trimmed copy is an artefact
-  nothing reads, and 3.9 GB of one on the reference dataset. `cdr-fs trim` writes it out for
-  inspection.
+  no stage reads. On the reference dataset it would be another 3.9 GB. `cdr-fs trim` writes it
+  out for inspection.
 
 `plot` is given only the figures this run's own tables can support, so a report saying
-nothing was fitted cannot contain a previous run's distances. With nothing left to draw it is
-dropped from the plan and said to be, and a figure that refuses is reported as `no figures`
+nothing was fitted cannot contain a previous run's distances. With nothing left to draw, `plot`
+is dropped from the plan and said to be, and a figure that refuses is reported as `no figures`
 rather than failing the run: the run's product is the table, the figures are diagnostics.
 
 ### Which file is the answer?
@@ -222,7 +214,7 @@ says how each check is arranged, and how to run them.
 
 | Page | What is on it |
 |---|---|
-| [Quickstart](docs/quickstart.md) | the first run annotated: what each stage reports, and three outputs that look wrong and are not |
+| [Quickstart](docs/quickstart.md) | the first run annotated: what `check` tells you, what the reports mean, where their numbers come from, and three outputs that look wrong and are not |
 | [Configuration](docs/configuration.md) | every key, what it defaults to, and the two patterns worth getting right |
 | [Describing your experiment](docs/experiment-design.md) | which keys state your design, what to write when a piece of it is missing, and what the format cannot express |
 | [Method notes](docs/method-notes.md) | trimming, pooling replicates, correlation collapsing, the missing-data filter, and the figures |

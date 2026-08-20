@@ -1,8 +1,8 @@
 # Quickstart
 
 An annotated first run, to read once before you point the tool at your own data: what
-`cdr-fs check` tells you before you start, what each stage reports, and where its numbers come
-from. The [README](../README.md) carries the commands and the shape of the answer.
+`cdr-fs check` tells you before you start, what the stage reports mean, and where their numbers
+come from. The [README](../README.md) carries the commands and the shape of the answer.
 
 Nothing here needs a download. [`examples/quickstart.ini`](../examples/quickstart.ini) runs as
 it stands, against `tests/fixtures/subset.tsv`, a committed 1,272-cell slice of the published

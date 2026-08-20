@@ -5,7 +5,7 @@ Small, committed slices of the published dataset, so the suite runs in CI withou
 is a row and column subset.
 
 Provenance for both: `cell_ID_pooled_median_row_plate_standardization_cid.txt` from
-<https://doi.org/10.5281/zenodo.17951792> (CC-BY-4.0) — the untrimmed, row/plate
+<https://doi.org/10.5281/zenodo.17951792> (CC-BY-4.0), the untrimmed, row/plate
 standardized per-cell table, 503,920 cells x 481 columns.
 
 ## `columns_published.txt` (24 KB)
@@ -16,10 +16,12 @@ The 481 column names of the full table, one per line, in table order:
 head -1 cell_ID_pooled_median_row_plate_standardization_cid.txt | tr '\t' '\n'
 ```
 
-This is what lets `test_examples.py` assert the real arithmetic — 481 columns, 10 metadata,
-471 features, 469 `rp_norm_*` plus the two organelle counts — with no data present. It is
-also the guard on the `counts_` trap: a `^counts_` metadata pattern resolves to 469
-features here, and the test says so.
+This is what lets `test_examples.py` assert the real arithmetic with no data present:
+`examples/published.ini` resolves these 481 columns to 18 metadata and 463 features, 461
+`rp_norm_*` plus the two organelle counts. The published run's own split, which carried the
+eight object-index columns as features, gives 10 and 471 instead; see
+[docs/reproducing.md](../../docs/reproducing.md). Collapsing the three `counts_` patterns into
+a bare `^counts_` here would give 20 and 461, losing both organelle counts.
 
 ## `subset.tsv` (440 KB)
 
@@ -29,7 +31,7 @@ features here, and the test says so.
 
 The design is preserved, including its one hole: concentration 2 (the highest dose) has no
 cells at all on D7/BR4 in the full table, so it has none here either. Concentration 2 is
-withheld from curve fitting, so this does not affect the published fit — but it is exactly
+withheld from curve fitting, so this does not affect the published fit, but it is exactly
 the sort of gap a per-replicate EMD would have to handle, so keeping it in the fixture is
 deliberate.
 
