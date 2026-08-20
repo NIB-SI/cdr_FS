@@ -195,6 +195,13 @@ def plot_fit_panels(
     if grid < 1:
         raise ValueError(f"grid must be at least 1, got {grid}")
 
+    # An empty list is not the same as no list: `None` means "every feature in the
+    # distance table", where `[]` means a list was supplied and held nothing. Drawing
+    # zero panels for it is the quietest possible failure - the caller asked for the
+    # figure, both tables were there, and nothing came back. Refuse instead, which the
+    # CLI reports as a skipped figure with this reason.
+    if features is not None and not list(features):
+        raise ValueError("the feature list is empty, so there is nothing to draw")
     wanted = None if features is None else list(dict.fromkeys(features))
     order = (
         {name: index for index, name in enumerate(wanted)}

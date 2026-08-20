@@ -122,7 +122,8 @@ exposure axis     10 is the LOWEST exposure, 2 the highest   (11.3683 -> 1000)
 `[design] levels` is the response axis and it runs low to high, but the labels themselves tell
 the tool nothing: the reference dataset's own labels count *down* as exposure climbs. A list
 written the wrong way round runs to completion, produces an identical distance table, negates
-every slope and retains nothing. Read that line against your own plate map.
+every slope, and comes out with a short, plausible list rather than an empty one.
+Read that line against your own plate map.
 → [Describing your experiment](docs/experiment-design.md)
 
 `--scan` additionally reads the exposure and stratum columns to confirm the levels you
@@ -177,7 +178,9 @@ A run closes on a ledger of what ran and the file that answers the question:
   drop_missing      ok
   plot              ok
   trim              not run
-retained 9 feature(s) -> results/final_representatives_retained.txt
+retained 9 feature(s)
+  feature list      results/final_representatives_retained.txt
+  final table       results/final_representatives.tsv
 ```
 
 ### What came out
@@ -213,8 +216,7 @@ percentile on two values discards both, and it fits all nine exposure levels rat
 withholding the top one. The method as it was published is
 [`examples/published.ini`](examples/published.ini). For a dataset that is not that one, copy
 [`examples/template.ini`](examples/template.ini) instead: the same ten sections, every switch
-written out beside its default, and a comment on each saying what it means for the
-experiment.
+written out and commented, and a note on each saying what it means for the experiment.
 
 ## The pipeline
 
@@ -225,7 +227,7 @@ from `[output] dir` under a stable name.
 ```bash
 cdr-fs check        -c config.ini          # validate the configuration, report the schema
 cdr-fs check        -c config.ini --scan   # also confirm the design occurs in the data
-cdr-fs run          -c config.ini          # the six stages below, in order
+cdr-fs run          -c config.ini          # the whole chain, in order (see below)
 cdr-fs trim         -c config.ini          # write the trimmed table  (optional — see below)
 cdr-fs emd          -c config.ini          # distances per feature, stratum and contrast
 cdr-fs fit          -c config.ini          # fit the models to each distance series
@@ -251,7 +253,8 @@ so that a bad one fails before the first stage rather than between two of them. 
 departures from "all of them", each stated in the run's own header:
 
 - **`correlation` runs only when `[correlation] enabled` is true.** Turned off it is reported
-  as skipped, and `drop_missing` applies `selected.txt` instead of `representatives.txt`.
+  as `off` rather than as a failure, and `drop_missing` applies `selected.txt` instead of
+  `representatives.txt`.
 - **`drop_missing` always runs**, whatever its switch says. The switch decides whether the
   missing-data filter drops anything; the stage writes the final table either way, so a run
   always ends in one.
@@ -323,7 +326,7 @@ unless you opt in.
 |---|---|
 | [Configuration](docs/configuration.md) | every key, what it defaults to, and the two patterns worth getting right |
 | [Describing your experiment](docs/experiment-design.md) | which keys state your design, what to write when a piece of it is missing, and what the format cannot express |
-| [Method notes](docs/method-notes.md) | pooling replicates, correlation collapsing, the missing-data filter, and the figures |
+| [Method notes](docs/method-notes.md) | trimming, pooling replicates, correlation collapsing, the missing-data filter, and the figures |
 | [Reproducing the published run](docs/reproducing.md) | what each of the four gates checks, and what the numbers are and are not |
 
 ## Origin, and the data

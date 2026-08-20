@@ -92,8 +92,7 @@ quietly turns into a feature.
 
 Mechanically: one regex per line, so a pattern may itself contain commas, and patterns are
 **searched, not fullmatched**. `counts_` alone therefore matches every column with that text
-anywhere in it; anchor with `^...$` to name a single column, as the reference configuration
-does for all but one of its patterns.
+anywhere in it; anchor with `^...$` to name a single column.
 
 The mistake runs the other way too, and it is harder to see. A column can be named like a
 measurement and still be a label:
@@ -157,6 +156,6 @@ themselves, and it is NaN for any dose below 1.
 ## See also
 
 - [Describing your experiment](experiment-design.md) — which of these keys state facts about the experiment
-- [Method notes](method-notes.md) — pooling, collapsing, dropping, and the figures
+- [Method notes](method-notes.md) — trimming, pooling, collapsing, dropping, and the figures
 - [Reproducing the published run](reproducing.md) — the four checks against the published outputs
 - [README](../README.md) — the method, the stages and an example run

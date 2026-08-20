@@ -123,23 +123,27 @@ def test_the_quickstart_runs_exactly_as_shipped(monkeypatch):
 def test_the_template_carries_every_section_and_switch(tmp_path):
     """It is the file a new dataset starts from, so its structure has to be the whole structure.
 
-    A switch it leaves out is a switch nobody discovers. The keys a user must decide are
-    written plain and the rest are written out commented at their defaults, which is what makes
-    the file complete and keeps `cdr-fs check`'s list of defaults in effect worth reading. Its
-    column names are generic on purpose, so this stops at `load_config`: there is no table the
-    template's schema is supposed to match.
+    A switch it leaves out is a switch nobody discovers, and a switch shown at the wrong value
+    is worse than one left out. So: every section and every key is present, and uncommenting
+    the commented ones changes nothing - which is what "commented out shows its default" claims
+    and the only way to check it, since `cdr-fs check` lists the defaults in effect by name
+    without their values. Its column names are generic on purpose, so this stops at
+    `load_config`: there is no table the template's schema is supposed to match.
     """
     import configparser
+    import dataclasses
 
     from cdr_fs.config import _ALLOWED
 
-    text = TEMPLATE_INI.read_text(encoding="utf-8")
-    text = re.sub(r"(?m)^table = .*$", f"table = {SUBSET.as_posix()}", text)
-    text = re.sub(r"(?m)^dir = .*$", f"dir = {(tmp_path / 'results').as_posix()}", text)
-    path = tmp_path / "template.ini"
-    path.write_text(text, encoding="utf-8")
+    def localised(text: str, name: str):
+        text = re.sub(r"(?m)^table = .*$", f"table = {SUBSET.as_posix()}", text)
+        text = re.sub(r"(?m)^dir = .*$", f"dir = {(tmp_path / 'results').as_posix()}", text)
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        return path
 
-    config = load_config(path)
+    text = TEMPLATE_INI.read_text(encoding="utf-8")
+    config = load_config(localised(text, "template.ini"))
     assert config.design.levels == ("L1", "L2", "L3", "L4", "L5", "L6")
 
     parser = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";",))
@@ -152,6 +156,21 @@ def test_the_template_carries_every_section_and_switch(tmp_path):
             assert re.search(rf"(?m)^;\s*{re.escape(key)} =", text), (
                 f"[{section}] {key} is neither set nor shown commented at its default"
             )
+
+    # Uncommenting every commented key must give the same run. `[trim]` is the file's own
+    # stated exception - `lower_percentile`, `upper_percentile` and `scope` have no default
+    # worth showing, so what is commented there is a starting value, and the file says so.
+    everything = load_config(
+        localised(re.sub(r"(?m)^;\s*(?=[a-z_]+ =)", "", text), "uncommented.ini")
+    )
+    for field in dataclasses.fields(config):
+        if field.name in ("path", "trim", "defaulted"):
+            continue
+        assert getattr(everything, field.name) == getattr(config, field.name), (
+            f"the commented value of a [{field.name}] key is not its default"
+        )
+    assert (config.trim.lower_percentile, config.trim.upper_percentile) == (0.0, 100.0)
+    assert (everything.trim.lower_percentile, everything.trim.upper_percentile) == (2.5, 97.5)
 
 
 def test_no_shipped_configuration_carries_a_local_path():

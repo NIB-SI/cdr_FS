@@ -51,7 +51,11 @@ is the exposure axis, whatever the labels look like. The reference dataset's own
 `11, 10, … 2` with `11` the control and `2` the top dose, so its `levels` line reads
 `10,9,8,…,2` — descending as text, ascending in exposure. That is also the quietest way to
 get a wrong answer: a `levels` list written high to low runs to completion, produces an
-identical distance table, negates every linear slope, and retains nothing.
+identical distance table, and negates every linear slope. It does not come out empty, which
+would at least be a signal — the default `slope_positive = any` keeps a feature whenever
+*some* stratum sloped the other way. On the committed fixture the correct axis retains nine
+features and the reversed one retains four, two of them shared, so the wrong answer looks
+like an answer. (Setting both halves of the rule to `all` does retain nothing.)
 
 `[design] dose` guards half of that. When you supply it, the doses must rise along `levels`,
 and a vector that falls while the levels are declared to rise is refused — so the two lists
@@ -110,8 +114,8 @@ Six exposure levels, because that is what all six models need; one metadata colu
 control, everything else defaulted. `cdr-fs check` lists the twenty-odd keys it filled in.
 
 That is the floor, not the starting point. [`examples/template.ini`](../examples/template.ini)
-is the file to copy: the same ten sections with every optional key written out beside its
-default, and a comment on each saying what it means for the experiment.
+is the file to copy: the same ten sections with every optional key written out and commented,
+and a note on each saying what it means for the experiment.
 
 ## What the configuration cannot say
 
@@ -149,6 +153,6 @@ back to the empty string it was, as every stage already does.
 ## See also
 
 - [Configuration](configuration.md) — every key, its default and its meaning
-- [Method notes](method-notes.md) — pooling, collapsing, dropping, and the figures
+- [Method notes](method-notes.md) — trimming, pooling, collapsing, dropping, and the figures
 - [Reproducing the published run](reproducing.md) — the four checks against the published outputs
 - [README](../README.md) — the method, the stages and an example run

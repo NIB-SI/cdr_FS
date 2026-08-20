@@ -68,7 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Start from examples/template.ini for a new dataset.\n"
-            "examples/published.ini is the published run: "
+            "examples/published.ini is the published run:\n  "
             "https://doi.org/10.1021/acs.est.5c18316"
         ),
     )
@@ -492,10 +492,15 @@ def _prepare(config: Config, *, trim: bool = True):
     return frame, resolved
 
 
+def _table_path(config: Config, name: str) -> Path:
+    """Where a stage table lives. One convention, so the stages can find each other."""
+    return Path(config.output.dir) / f"{name}{_EXTENSIONS[config.input.sep_keyword]}"
+
+
 def _write(config: Config, table, name: str):
     destination = Path(config.output.dir)
     destination.mkdir(parents=True, exist_ok=True)
-    target = destination / f"{name}{_EXTENSIONS[config.input.sep_keyword]}"
+    target = _table_path(config, name)
     table.to_csv(target, sep=config.input.sep, index=False)
     print(f"wrote {target}  ({_human_bytes(target.stat().st_size)})")
     return target
@@ -519,9 +524,7 @@ def _read_stage(config: Config, name: str, produced_by: str):
     """Read a previous stage's output, or say which command produces it."""
     from cdr_fs.schema import read_stage_table
 
-    target = (
-        Path(config.output.dir) / f"{name}{_EXTENSIONS[config.input.sep_keyword]}"
-    )
+    target = _table_path(config, name)
     if not target.exists():
         raise ConfigError(
             f"{target} is missing - run `cdr-fs {produced_by} -c {config.path}` first"
@@ -780,11 +783,19 @@ def _stage_plot(
             draw(name, lambda target=target, source=source, title=title: [
                 plot_distribution(read(target), results / f"{source}.png", title=title)
             ])
+        elif name == "baseline" and config.emd.baseline == "none":
+            # `emd` ran and will never write this file, so naming it as the fix is wrong.
+            skipped.append(
+                "baseline - [emd] baseline is none, so no between-replicate distances "
+                "were computed"
+            )
         else:
             skipped.append(f"{name} - needs {source}{extension} (run `cdr-fs emd`)")
 
     if "dendrogram" in wanted:
-        tree = available("correlation_linkage")
+        # Only when the stage is on: a tree left in the output directory by an earlier
+        # run would otherwise be drawn as though it belonged to this one.
+        tree = available("correlation_linkage") if config.correlation.enabled else None
         clusters = available("correlation_clusters")
         if tree:
             draw("dendrogram", lambda: [
@@ -795,6 +806,10 @@ def _stage_plot(
                     clusters=read(clusters) if clusters else None,
                 )
             ])
+        elif not config.correlation.enabled:
+            skipped.append(
+                "dendrogram - [correlation] enabled is false, so there is no tree to draw"
+            )
         else:
             skipped.append(
                 "dendrogram - needs correlation_linkage (run `cdr-fs correlation`)"
@@ -879,7 +894,16 @@ def _run_chain(config: Config) -> int:
         print(_field(stage, status[stage]))
     print(_field("trim", "not run"))  # last: it is not part of the chain
     if status["drop_missing"] == "ok":
-        print(f"retained {len(read_feature_list(retained))} feature(s) -> {retained}")
+        kept = len(read_feature_list(retained))
+        print(f"retained {kept} feature(s)")
+        print(_field("feature list", str(retained)))
+        print(_field("final table", str(_table_path(config, f"final_{stem}"))))
+        if not kept:
+            # The chain finished and produced nothing. Say where the reason is written.
+            print(
+                "  nothing survived - select_evidence.tsv carries the linear slope and the "
+                "winning model for every feature and stratum"
+            )
     return code
 
 
@@ -905,8 +929,8 @@ def _run_header(config: Config, planned: list[str]) -> list[str]:
     # its output is an inspection copy no stage reads; with it off, the stage would refuse,
     # and pointing at a command that exits 3 would be worse than saying nothing.
     absent.append(
-        "trim  (every stage trims from [input] table itself; "
-        f"`cdr-fs trim -c {config.path}` writes the trimmed copy for inspection)"
+        "trim  (every stage trims from [input] table itself; `cdr-fs trim` "
+        "writes the trimmed copy out for inspection)"
         if config.trim.enabled
         else "trim  ([trim] enabled is false, so nothing is trimmed anywhere)"
     )

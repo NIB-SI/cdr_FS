@@ -34,8 +34,9 @@ The committed fixture holds one to eight cells per well, and trimming it the pub
 trimming off, and the one place that file departs from the method rather than from the scale.
 
 `[correlation] aggregate_by` defaults to `[trim] scope`, on the reasoning that the unit worth
-trimming within is the unit worth correlating across. With trimming off there is no scope to
-default to, and `[correlation] aggregate_by` becomes required.
+trimming within is the unit worth correlating across. `scope` is read whether or not trimming
+is on, so that default survives `enabled = false`; what removes it is leaving `scope` unset,
+and then `aggregate_by` becomes required as soon as `[correlation] enabled` is true.
 
 ## Pooling replicates
 

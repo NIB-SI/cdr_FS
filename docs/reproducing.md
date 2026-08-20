@@ -64,7 +64,7 @@ is where the method is argued. Three of its values need a sentence that does not
 file.
 
 **The dose vector is a 1.75-fold serial dilution from 1000 mg/L** — `1000 / 1.75^k` for
-k = 8…0, written to full precision. The article's SI prints the same series truncated
+k = 8…0, written to six decimals. The article's SI prints the same series truncated
 (1000, 571.42, 326.530, 186.588 … 11.36), which is how the factor was pinned to exactly 1.75
 rather than the 1.7502 a back-calculation from those truncated endpoints suggests. The run
 does not fit against these values — `[fit] x_scale` is `rank` — but they are what makes the
@@ -97,5 +97,5 @@ code.
 
 - [Configuration](configuration.md) — every key, its default and its meaning
 - [Describing your experiment](experiment-design.md) — the twelve keys that state facts about the experiment
-- [Method notes](method-notes.md) — pooling, collapsing, dropping, and the figures
+- [Method notes](method-notes.md) — trimming, pooling, collapsing, dropping, and the figures
 - [README](../README.md) — the method, the stages and an example run

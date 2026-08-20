@@ -506,7 +506,7 @@ def load_config(path: str | Path) -> Config:
     select_spec = _read_select(reader, schema_spec, fit_spec)
     correlation_spec = _read_correlation(reader, trim_spec)
     drop_missing_spec = _read_drop_missing(reader)
-    output_spec = OutputSpec(dir=Path(reader.text("output", "dir")))
+    output_spec = _read_output(reader)
 
     return Config(
         path=path,
@@ -575,6 +575,16 @@ def _read_input(reader: _Reader) -> InputSpec:
     if not table.is_file():
         raise reader.fail("input", "table", f"is not a file: {table}")
     return InputSpec(table=table, sep_keyword=sep_keyword)
+
+
+def _read_output(reader: _Reader) -> OutputSpec:
+    directory = Path(reader.text("output", "dir"))
+    # Decidable from the file alone, so it belongs here. Every stage writes into this
+    # directory, and a path already occupied by a file fails on the first `mkdir` - which
+    # is after that stage has done its work, with a traceback instead of a message.
+    if directory.exists() and not directory.is_dir():
+        raise reader.fail("output", "dir", f"exists but is not a directory: {directory}")
+    return OutputSpec(dir=directory)
 
 
 def _read_schema(reader: _Reader) -> SchemaSpec:
