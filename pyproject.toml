@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cdr-fs"
-version = "0.1.0.dev0"
+dynamic = ["version"]
 description = "Feature selection for high-content screening by fitting concentration/dose-response models to earth mover's distance scores."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ keywords = [
     "CellProfiler",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -50,6 +50,9 @@ Homepage = "https://github.com/NIB-SI/cdr_FS"
 Repository = "https://github.com/NIB-SI/cdr_FS"
 "Origin pipeline" = "https://github.com/NIB-SI/HCS-proc"
 "Method article" = "https://doi.org/10.1021/acs.est.5c18316"
+
+[tool.setuptools.dynamic]
+version = { attr = "cdr_fs.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

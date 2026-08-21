@@ -56,11 +56,16 @@ that consume the selected features sit downstream.
 ## Installation
 
 ```bash
+git clone https://github.com/NIB-SI/cdr_FS.git
+cd cdr_FS
 pip install -e .
 ```
 
 Python 3.10 or newer. Requires numpy, pandas, scipy and matplotlib; `pip install -e ".[dev]"`
 adds pytest.
+
+Clone rather than install from an index: `examples/` and `tests/fixtures/` are not part of
+the installed package, and everything below needs both.
 
 ## Quickstart
 

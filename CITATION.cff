@@ -7,6 +7,24 @@ message: >-
   article listed under preferred-citation, in which the method was
   first published.
 type: software
+abstract: >-
+  cdr_FS selects features in high-dimensional screening data by
+  asking, of each feature, whether its distributional distance from
+  the control grows with exposure in a way a concentration/dose-response
+  curve describes better than a flat line does. The distance is the
+  earth mover's (Wasserstein) distance between the control and the
+  exposed populations. Six standard concentration-response models
+  (Brain-Cousens BC4 and BC5, four-parameter log-logistic,
+  four-parameter Weibull, linear and constant) are ranked by AIC and
+  BIC, and a feature is retained when its linear slope is positive and
+  the constant model is not the best fit. Survivors can then be
+  collapsed by correlation and filtered for sparsity. The experimental
+  design is declared in a configuration file rather than written into
+  the code. Extracted from NIB-SI/HCS-proc, the pipeline published in
+  Tome et al. 2026, and it reproduces that article's feature
+  selection: both earth mover's distance tables, the two retained
+  feature lists of 182 and 374 features, the 99 that survive
+  correlation collapsing, and the 95 final features.
 authors:
   - given-names: Miha
     family-names: Tome
@@ -22,6 +40,8 @@ contact:
     email: miha.tome@nib.si
 repository-code: 'https://github.com/NIB-SI/cdr_FS'
 license: MIT
+version: 1.0.0
+date-released: '2026-08-21'
 keywords:
   - high-content screening
   - high-content imaging
