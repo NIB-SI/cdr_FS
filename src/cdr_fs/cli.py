@@ -143,6 +143,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "correlation",
         "collapse near-redundant features by correlation (optional)",
     )
+    correlation.add_argument(
+        "--all-features",
+        action="store_true",
+        help=(
+            "collapse every feature in the table rather than the selected list, so the "
+            "stage can be run on its own; outputs take an `all_` prefix, because a "
+            "correlation of everything is not a correlation of the selected features"
+        ),
+    )
     correlation.set_defaults(handler=_correlation)
 
     # The help opens on the table because the stage name does not: `drop_missing` names the
@@ -161,6 +170,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "feature list to apply, one name per line; the default is the representatives "
             "list when [correlation] is enabled, the selected list when only [select] is, "
             "and every feature when neither is"
+        ),
+    )
+    drop_missing.add_argument(
+        "--all-features",
+        action="store_true",
+        help=(
+            "apply every feature in the table rather than a narrowed list, so the stage "
+            "can be run on its own; writes final_all*. To filter the collapse of "
+            "everything instead, pass --features all_representatives.txt"
         ),
     )
     drop_missing.set_defaults(handler=_drop_missing)
@@ -531,15 +549,15 @@ def _list_path(config: Config, name: str) -> Path:
     return Path(config.output.dir) / f"{name}.txt"
 
 
-def _collapsed_prefix(config: Config) -> str:
+def _collapsed_prefix(everything: bool) -> str:
     """What `correlation`'s outputs are called: nothing extra, or `all_`.
 
     A correlation of every feature is not a correlation of the selected ones, and the two
     must not overwrite each other's answers in a shared output directory. The method's own
-    chain keeps the unqualified names; a run with no selection qualifies its outputs with
-    the input they were built from.
+    chain keeps the unqualified names; collapsing the whole feature set, whether because
+    there was no selection or because `--all-features` asked for it, qualifies them.
     """
-    return "" if config.select.enabled else "all_"
+    return "all_" if everything else ""
 
 
 def _features_stem(config: Config) -> str | None:
@@ -550,7 +568,7 @@ def _features_stem(config: Config) -> str | None:
     feature set is what there is to filter.
     """
     if config.correlation.enabled:
-        return f"{_collapsed_prefix(config)}representatives"
+        return f"{_collapsed_prefix(not config.select.enabled)}representatives"
     if config.select.enabled:
         return "selected"
     return None
@@ -694,10 +712,10 @@ def _stage_select(config: Config) -> int:
 
 
 def _correlation(args: argparse.Namespace) -> int:
-    return _stage_correlation(load_config(args.config))
+    return _stage_correlation(load_config(args.config), all_features=args.all_features)
 
 
-def _stage_correlation(config: Config) -> int:
+def _stage_correlation(config: Config, *, all_features: bool = False) -> int:
     from cdr_fs.correlation import collapse_correlated
     from cdr_fs.drop_missing import read_feature_list
 
@@ -711,7 +729,11 @@ def _stage_correlation(config: Config) -> int:
         )
         return 3
 
-    if config.select.enabled:
+    # The redundancy question does not need a selection to have happened, so it can be
+    # asked of the whole feature set: because [select] enabled is false, or because this
+    # run asked for it by name. Either way the outputs are named for what was collapsed.
+    everything = all_features or not config.select.enabled
+    if not everything:
         selected = _list_path(config, "selected")
         if not selected.exists():
             raise ConfigError(
@@ -726,15 +748,14 @@ def _stage_correlation(config: Config) -> int:
             return 3
         frame, _ = _prepare(config)
     else:
-        # No selection ran, so there is no retained list to collapse: the redundancy
-        # question is asked of the whole feature set instead.
-        print("collapsing every feature ([select] enabled is false)")
+        why = "--all-features" if all_features else "[select] enabled is false"
+        print(f"collapsing every feature ({why})")
         frame, resolved = _prepare(config)
         features = resolved.features
 
     kept, clusters, tree, report = collapse_correlated(config, frame, features)
     print(report.summary())
-    prefix = _collapsed_prefix(config)
+    prefix = _collapsed_prefix(everything)
     _write(config, clusters, f"{prefix}correlation_clusters")
     _write(config, tree, f"{prefix}correlation_linkage")
     _write_list(config, kept, f"{prefix}representatives")
@@ -742,17 +763,31 @@ def _stage_correlation(config: Config) -> int:
 
 
 def _drop_missing(args: argparse.Namespace) -> int:
-    return _stage_drop_missing(load_config(args.config), features=args.features)
+    if args.features and args.all_features:
+        raise ConfigError(
+            "--features names a list and --all-features says to use every feature; "
+            "pass one or the other"
+        )
+    return _stage_drop_missing(
+        load_config(args.config), features=args.features, all_features=args.all_features
+    )
 
 
-def _stage_drop_missing(config: Config, *, features: str | None = None) -> int:
+def _stage_drop_missing(
+    config: Config, *, features: str | None = None, all_features: bool = False
+) -> int:
     from cdr_fs.drop_missing import read_feature_list, restrict_table
 
-    source = _features_source(config, features)
+    source = None if all_features else _features_source(config, features)
     if source is None:
-        # Neither stage that narrows the feature set ran, so there is no list to apply and
-        # the whole set is the answer. `_prepare` is where it comes from.
-        print("applying every feature (no selection, no correlation collapsing)")
+        # Nothing narrowed the feature set, either because no stage that would have was
+        # run or because `--all-features` said to ignore them. `_prepare` is the whole set.
+        why = (
+            "--all-features"
+            if all_features
+            else "no selection, no correlation collapsing"
+        )
+        print(f"applying every feature ({why})")
         frame, resolved = _prepare(config)
         names, stem = resolved.features, "all"
     else:
@@ -879,13 +914,18 @@ def _stage_plot(
 
     if "dendrogram" in wanted:
         # Only when the stage is on: a tree left in the output directory by an earlier
-        # run would otherwise be drawn as though it belonged to this one.
-        prefix = _collapsed_prefix(config)
-        tree = (
-            available(f"{prefix}correlation_linkage")
-            if config.correlation.enabled
-            else None
-        )
+        # run would otherwise be drawn as though it belonged to this one. Within that,
+        # either name may be present - `correlation --all-features` writes the `all_` one
+        # whatever the switches say - so take whichever this directory actually holds, and
+        # the configuration's own first when it holds both.
+        prefix, tree = "", None
+        if config.correlation.enabled:
+            wanted_first = _collapsed_prefix(not config.select.enabled)
+            for candidate in (wanted_first, "all_" if wanted_first == "" else ""):
+                if available(f"{candidate}correlation_linkage"):
+                    prefix = candidate
+                    tree = available(f"{candidate}correlation_linkage")
+                    break
         clusters = available(f"{prefix}correlation_clusters")
         if tree:
             draw("dendrogram", lambda: [

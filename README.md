@@ -148,14 +148,25 @@ cdr-fs plot         -c config.ini          # draw the figures from whatever tabl
 ### What each stage needs before it
 
 Only `emd` always runs on its own, because `[input] table` is all it reads. `fit` always needs
-`emd.tsv`, and `select` always needs `fit.tsv`. The last two depend on the switches rather than
-on a fixed predecessor: `correlation` reads `selected.txt` when `[select] enabled` is true and
-`[input] table` when it is false, and `drop_missing` reads whichever list is left in play, or
-every feature when neither switch narrows anything. So with the selection off, `correlation` and
-`drop_missing` do run without `emd` and `fit`; with it on, they do not.
+`emd.tsv`, and `select` always needs `fit.tsv`.
+
+The last two are not tied to a predecessor at all. Redundancy and sparsity are questions about
+the feature set, not about the concentration/dose–response fit, so either can be asked of the
+starting dataset:
+
+```bash
+cdr-fs correlation  -c config.ini --all-features   # collapse the whole feature set
+cdr-fs drop_missing -c config.ini --all-features   # or filter it for sparsity
+```
+
+Without the flag they follow the switches: `correlation` reads `selected.txt` when
+`[select] enabled` is true and `[input] table` when it is false, and `drop_missing` reads
+whichever list is left in play, or every feature when neither switch narrows anything. A collapse
+over everything writes `all_representatives.txt` and friends, so it cannot overwrite a selection
+run's answer in the same directory.
 
 A stage that cannot find its input names the command that produces it and exits 2. A stage whose
-own switch is off exits 3 instead, saying so.
+own switch is off exits 3 instead, and `--all-features` does not override that.
 
 ### What `run` runs, and what it leaves out
 
