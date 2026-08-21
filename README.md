@@ -2,8 +2,9 @@
 
 For each feature in a high-dimensional dataset where we expect a concentration/dose response,
 we measure how far its distribution moves away from the control as exposure rises; then keep
-the features where a concentration–response curve describes that movement better than a flat
-line does. The distance is the earth mover's (Wasserstein) distance between populations, and
+the features where a concentration/dose–response curve describes that movement better than a
+flat line does. The distance is the earth mover's (Wasserstein) distance between populations,
+and
 the curves are six standard concentration–response models ranked by AIC and BIC. The name is
 **c**oncentration/**d**ose–**r**esponse **F**eature **S**election.
 
@@ -21,9 +22,7 @@ distance from the control grow with exposure in a way a concentration–response
 describes better than a flat line?**
 
 1. For every feature and every exposure level, compute the earth mover's (Wasserstein)
-   distance between the control population and the exposed population. The distance between
-   control populations of different biological replicates gives the reproducibility floor to
-   read those numbers against.
+   distance between the control population and the exposed population.
 2. Fit six models to the resulting distance-versus-exposure series: Brain–Cousens hormesis
    (BC4, BC5), four-parameter log-logistic (LL4), four-parameter Weibull (WB1.4), linear
    (Lin) and constant (Con).
@@ -32,10 +31,6 @@ describes better than a flat line?**
    carries no concentration-dependent signal.
 4. Optionally collapse the survivors by correlation, keeping one representative per cluster
    of near-redundant features, and drop any left too sparse to use.
-
-Using distributions rather than per-well means is the point: a subpopulation can shift while
-the population mean stays put, and a distance between distributions registers that where a
-difference of means does not.
 
 ### The limits of the question
 
@@ -52,10 +47,11 @@ the data, and this tool does not answer it.
 
 ### What it does not do
 
-It starts from a per-object table and stops at a list of feature names. Image quality control,
-CellProfiler, segmentation, per-object pooling and row/plate standardization sit upstream, all
-tied to a particular plate design; the UMAP, MMD and Mahalanobis analyses that consume the
-selected features sit downstream. [HCS-proc](https://github.com/NIB-SI/HCS-proc) covers those.
+It starts from a per-object table and stops at a list of feature names. For example, data
+quality control, segmentation, feature extraction, per-object pooling and standardization sit
+upstream, all tied to a particular experimental design; the UMAP, MMD and Mahalanobis analyses
+that consume the selected features sit downstream.
+[HCS-proc](https://github.com/NIB-SI/HCS-proc) covers those.
 
 ## Installation
 
@@ -69,7 +65,7 @@ adds pytest.
 ## Quickstart
 
 The repository ships a configuration you can run without editing anything. It points at
-`tests/fixtures/subset.tsv`, 1,272 cells × 30 columns, a real slice of the published
+`tests/fixtures/subset.tsv`, 1,272 cells × 30 columns, a subset of the published
 dataset, committed so that there is something to run before you download 121 GB. From the
 repository root:
 
@@ -77,8 +73,6 @@ repository root:
 cdr-fs check -c examples/quickstart.ini --scan
 cdr-fs run   -c examples/quickstart.ini
 ```
-
-About a minute in total, most of it in `fit`. Results land in `results/`.
 
 `run` is the chain in one command, and every stage is also a command of its own. These six
 are the same run:
@@ -92,19 +86,22 @@ cdr-fs drop_missing -c examples/quickstart.ini
 cdr-fs plot         -c examples/quickstart.ini --features results/final_representatives_retained.txt
 ```
 
-### The two lines to read first
+### Metadata for the concentration gradient
 
-Two lines of `cdr-fs check` carry mistakes nothing downstream can catch. Read them before
-running anything, and against your own plate map:
+In the quickstart example we have "10" as our lowest exposure meta-data label and "2" as the
+highest, under column "Concentration". `cdr-fs check` prints that, and the metadata/feature
+split, before anything runs:
 
 ```
 exposure axis     10 is the LOWEST exposure, 2 the highest   (11.3683 -> 1000)
 [columns]  30 = 10 metadata + 20 feature(s)
 ```
 
+Read both against your own experiment. An axis declared the wrong way round and a feature
+count you did not expect are the two mistakes nothing downstream can catch.
 → [Quickstart](docs/quickstart.md) says what each one means and what goes wrong.
 
-### What came out
+### Quickstart results
 
 ```
 30 columns  →  10 metadata + 20 features   (check)
@@ -114,13 +111,11 @@ exposure axis     10 is the LOWEST exposure, 2 the highest   (11.3683 -> 1000)
             →   9 after the 30% missing-data filter
 ```
 
-`results/final_representatives_retained.txt` is the answer, one feature name per line.
+`results/final_representatives_retained.txt` - one feature name per line.
 
 **This is a smoke test of the tool, not a reproduction of the method**: it turns trimming off
 and fits all nine exposure levels rather than withholding the top one. For real work, copy
-[`examples/template.ini`](examples/template.ini) if your dataset is not the published one, and
-[`examples/published.ini`](examples/published.ini) if it is.
-→ [Quickstart](docs/quickstart.md) annotates the run and the reports it prints.
+[`examples/template.ini`](examples/template.ini) and match the experimental design to your dataset.
 
 ## The pipeline
 
@@ -176,7 +171,7 @@ nothing was fitted cannot contain a previous run's distances. With nothing left 
 is dropped from the plan and said to be, and a figure that refuses is reported as `no figures`
 rather than failing the run: the run's product is the table, the figures are diagnostics.
 
-### Which file is the answer?
+### Which file is the result?
 
 `selected.txt` if you stop after `select`; `representatives.txt` if you collapse correlated
 features; `final_<list>_retained.txt` if you also apply the missing-data filter. Each is one
