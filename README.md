@@ -145,6 +145,18 @@ cdr-fs plot         -c config.ini          # draw the figures from whatever tabl
 | `drop_missing` | `final_<list>.tsv`: the table restricted to that list; `final_<list>_features.tsv`: how much data each column holds and which rule removed it; `final_<list>_retained.txt` |
 | `plot` | `fit_<stratum>_part_<n>.png`; `emd.png` and `emd_baseline.png`; `dendrogram.png`, or `all_dendrogram.png` beside its tree |
 
+### What each stage needs before it
+
+Only `emd` always runs on its own, because `[input] table` is all it reads. `fit` always needs
+`emd.tsv`, and `select` always needs `fit.tsv`. The last two depend on the switches rather than
+on a fixed predecessor: `correlation` reads `selected.txt` when `[select] enabled` is true and
+`[input] table` when it is false, and `drop_missing` reads whichever list is left in play, or
+every feature when neither switch narrows anything. So with the selection off, `correlation` and
+`drop_missing` do run without `emd` and `fit`; with it on, they do not.
+
+A stage that cannot find its input names the command that produces it and exits 2. A stage whose
+own switch is off exits 3 instead, saying so.
+
 ### What `run` runs, and what it leaves out
 
 `emd`, `fit`, `select`, `correlation`, `drop_missing`, `plot`, reading the configuration once

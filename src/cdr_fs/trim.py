@@ -38,6 +38,8 @@ rather than mysterious.
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence
 
@@ -76,6 +78,9 @@ class TrimReport:
     features_with_nonfinite: tuple[str, ...]
     #: Rows whose scope columns are themselves missing; they are trimmed as one group.
     rows_with_missing_scope: int
+    #: Rows in the median group. This is what decides whether a percentile trim is trimming
+    #: tails or just deleting extremes; see `resolving_size`.
+    median_group_size: int
     #: Values trimmed per feature, in feature order.
     per_feature: pd.Series
 
@@ -83,14 +88,41 @@ class TrimReport:
     def fraction_trimmed(self) -> float:
         return self.values_trimmed / self.values_present if self.values_present else 0.0
 
+    @property
+    def resolving_size(self) -> int:
+        """Rows a group needs before the narrower tail excludes more than one value.
+
+        A linear-interpolated percentile of `n` values sits at position `(n - 1) * q`, so
+        until `(n - 1) * q >= 1` the only value outside the interval is the extreme one.
+        Below this size a `[p2.5, p97.5]` trim removes exactly two values per group whatever
+        `n` is, which is 2/n rather than the 5% the percentiles name.
+        """
+        tail = min(self.lower_percentile, 100.0 - self.upper_percentile)
+        return 0 if tail <= 0 else int(math.ceil(1.0 + 100.0 / tail))
+
     def summary(self) -> str:
         lines = [
             f"trimmed to [p{self.lower_percentile:g}, p{self.upper_percentile:g}] within "
             f"{', '.join(self.scope)}",
-            f"  {self.groups} group(s) x {self.features} feature(s) over {self.rows} row(s)",
+            f"  {self.groups} group(s) x {self.features} feature(s) over {self.rows} "
+            f"row(s), median {self.median_group_size} row(s) per group",
             f"  {self.values_trimmed:,} of {self.values_present:,} values removed "
             f"({self.fraction_trimmed:.2%})",
         ]
+        # The fraction removed is a property of the group sizes, not only of the
+        # percentiles, and the difference is large enough to look like a bug. Nothing else
+        # says so, and a reader who does not know it will read 55% as an error.
+        if 0 < self.median_group_size < self.resolving_size:
+            lines.append(
+                f"  a p{min(self.lower_percentile, 100 - self.upper_percentile):g} tail "
+                f"needs {self.resolving_size} row(s) in a group to resolve, and the median "
+                f"group holds {self.median_group_size}"
+            )
+            lines.append(
+                "  below that this removes each group's two extreme values whatever its "
+                "size, so the fraction removed is 2/n and not "
+                f"{(100 - (self.upper_percentile - self.lower_percentile)):g}%"
+            )
         if self.values_nonfinite:
             lines.append(
                 f"  {self.values_nonfinite:,} infinite value(s) in "
@@ -251,6 +283,9 @@ def trim_extremes(
         values_nonfinite=nonfinite_total,
         features_with_nonfinite=tuple(features_with_nonfinite),
         rows_with_missing_scope=int(frame[scope].isna().any(axis=1).sum()),
+        median_group_size=(
+            int(np.median(np.bincount(code_values, minlength=n_groups))) if n_groups else 0
+        ),
         per_feature=pd.Series(trimmed_per_feature, index=features, name="values_trimmed"),
     )
     return frame, report
