@@ -42,6 +42,16 @@ repository-code: 'https://github.com/NIB-SI/cdr_FS'
 license: MIT
 version: 1.0.0
 date-released: '2026-08-21'
+doi: 10.5281/zenodo.22047439
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.22047439
+    description: >-
+      Concept DOI for the code archive; always resolves to the newest
+      release. This is the DOI to cite.
+  - type: doi
+    value: 10.5281/zenodo.22047440
+    description: Version DOI for release v1.0.0.
 keywords:
   - high-content screening
   - high-content imaging

@@ -277,3 +277,7 @@ MIT (see [LICENSE](LICENSE)). Copyright National Institute of Biology.
 
 If you use this tool, please cite both it and the article in which the method was first
 published; [CITATION.cff](CITATION.cff) has the machine-readable metadata for both.
+
+The tool is archived on Zenodo: <https://doi.org/10.5281/zenodo.22047439>, the concept DOI,
+which always resolves to the newest release. Release v1.0.0 is
+`10.5281/zenodo.22047440`.
